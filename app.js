@@ -223,7 +223,7 @@ function telaInicio() {
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
     ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))}</b></div>`).join('')}</div>` : ''}
   </section>
-  ${semInicial.length ? `<p class="faixa-alerta">Falta o saldo inicial de: <b>${semInicial.map(esc).join(', ')}</b>. Preencha na planilha, aba <b>Contas</b>, coluna saldo_inicial. Sem ele o saldo começa do zero.</p>` : ''}
+  ${semInicial.length ? `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="saldoIni">Falta dizer quanto tem em: <b>${semInicial.map(esc).join(', ')}</b>. Sem isso o saldo começa do zero. <b style="color:var(--texto)">Toque para preencher →</b></button>` : ''}
 
   <section class="acoes">
     <button class="acao entrou" data-a="nova" data-v="entrada"><span>${IC.mais}</span>Entrou</button>
@@ -358,13 +358,20 @@ function folhaHtml() {
   if (!f) return '';
   const d = S.dados;
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)' }[f.tipo] || 'var(--verde)';
-  const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro' };
+  const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida' };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
   let corpo = '';
 
-  if (f.tipo === 'registro') {
+  if (f.tipo === 'saldo') {
+    corpo = `<div class="visor"><span class="sub" style="font-size:13px">${f.posicao} de ${f.totalContas} · quanto tem agora em</span>
+      <b style="font-size:22px;color:var(--texto)">${esc(f.conta)}</b><b style="color:var(--azul)">R$ ${esc(f.valor || '0')}</b>
+      ${f.erro ? `<span style="font-size:12px;color:var(--vermelho-txt);font-weight:600">${esc(f.erro)}</span>` : ''}</div>
+      <div class="teclado">${['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((k) => `<button data-a="tecla" data-v="${k}" aria-label="${k === 'del' ? 'Apagar' : k}">${k === 'del' ? '⌫' : k}</button>`).join('')}</div>
+      <p class="sub" style="font-size:12px;line-height:1.5;margin:0">Olhe no app do banco. Se não tem nada, deixe 0. Esse é o ponto de onde o sistema começa a contar.</p>
+      <button class="principal" style="background:var(--azul)" data-a="salvarSaldo" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>`;
+  } else if (f.tipo === 'registro') {
     const r = f.reg;
     const linhas = [['Tipo', { entrada: 'Entrada', saida: 'Saída', mover: 'Mover', sem_gasto: 'Dia sem gasto' }[r.tipo]], ['Valor', brl(r.valor, true)], ['Categoria', r.categoria], ['Item', r.item], ['Lugar', r.lugar],
       ['Conta', r.conta], ['Para', r.contaDestino], ['Envelope', r.envelope], ['Pagamento de', r.compromisso], ['Quem', r.quem], ['De quem', r.deQuem], ['Quando', quando(r.data)]].filter((l) => l[1]);
@@ -424,7 +431,7 @@ function folhaHtml() {
       <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Confirmar divisão'}</button>`;
   }
 
-  const temVoltar = f.tipo !== 'registro' && f.passo > 1;
+  const temVoltar = f.tipo !== 'registro' && f.tipo !== 'saldo' && f.passo > 1;
   return `<div class="fundo-folha"><div class="fora" data-a="fechar"></div>
     <div class="folha" role="dialog" aria-label="${esc(titulos[f.tipo])}"><div class="alca"></div>
       <div class="folha-topo">${temVoltar ? `<button class="btn-icone" data-a="voltar" aria-label="Voltar" style="color:var(--texto)">${IC.voltar}</button>` : ''}
@@ -554,6 +561,33 @@ const acoes = {
     l.real = Math.max(0, l.real + passo); render();
   },
   salvar: () => salvarFolha(),
+  saldoIni: () => {
+    const faltam = contasAtivas().filter((c) => !c.temSaldoInicial).map((c) => c.nome);
+    if (!faltam.length) return;
+    S.folha = { tipo: 'saldo', conta: faltam[0], faltam, posicao: 1, totalContas: faltam.length, valor: '', erro: '' };
+    render();
+  },
+  salvarSaldo: async () => {
+    const f = S.folha;
+    if (f.valor === '') { f.erro = 'Digite o valor (ou 0).'; render(); return; }
+    f.salvando = true; render();
+    try {
+      await api('saldoInicial', { conta: f.conta, valor: parseFloat(f.valor.replace(',', '.')) || 0 });
+    } catch (e) {
+      f.salvando = false;
+      if (e.message === 'ja_tem') avisar(f.conta + ' já tinha saldo inicial.', true);
+      else if (e.message !== 'chave') { avisar('Não salvou. Tente de novo.', true); render(); return; }
+    }
+    const resto = f.faltam.slice(1);
+    if (resto.length) {
+      S.folha = { tipo: 'saldo', conta: resto[0], faltam: resto, posicao: f.posicao + 1, totalContas: f.totalContas, valor: '', erro: '' };
+      render();
+    } else {
+      S.folha = null;
+      avisar('Ponto de partida salvo. A contagem começou');
+      carregar();
+    }
+  },
   semGasto: async () => {
     try { await api('registrar', { tipo: 'sem_gasto', quem: eu }); avisar('Dia sem gasto anotado. Sequência mantida'); carregar(); }
     catch (e) { if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); }
