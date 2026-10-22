@@ -165,3 +165,6 @@ input { font-family: inherit; }
 /* Entrada (primeira vez) */
 .entrar { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; gap: 22px; padding-bottom: 40px; }
 .carregando { color: var(--apagado); text-align: center; padding-top: 40vh; font-size: 14px; }
+
+/* "hidden" precisa vencer o display:flex das classes, senão o aviso nunca some. */
+[hidden] { display: none !important; }

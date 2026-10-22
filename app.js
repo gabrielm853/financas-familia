@@ -29,12 +29,17 @@ const S = {
 async function api(acao, dados = {}) {
   // "text/plain" de propósito: evita a pergunta prévia do navegador (CORS),
   // que o Apps Script não sabe responder.
-  const r = await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ chave, acao }, dados))
-  });
-  const j = await r.json();
+  // Cada falha ganha um nome diferente, para a tela dizer o que foi de fato.
+  let r, j;
+  try {
+    r = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ chave, acao }, dados))
+    });
+  } catch (e) { throw new Error('rede'); }
+  try { j = await r.json(); } catch (e) { throw new Error('resposta ' + r.status); }
+  if (j.erro === 'interno') throw new Error('interno: ' + (j.detalhe || ''));
   if (j.erro === 'chave') { chave = ''; guardar('fin_chave', ''); S.erroEntrar = 'Chave não confere.'; render(); throw new Error('chave'); }
   if (j.erro) throw new Error(j.erro);
   return j;
@@ -45,9 +50,12 @@ async function carregar() {
   S.carregando = true;
   try {
     S.dados = await api('estado');
+    S.erroCarga = '';
     guardar('fin_cache', S.dados);
   } catch (e) {
-    if (e.message !== 'chave') avisar('Sem conexão com a planilha. Tente de novo.', true);
+    // Sem isto, a tela de "Abrindo…" chamava carregar() de novo sem parar.
+    if (e.message !== 'chave') S.erroCarga = e.message;
+    if (S.dados) avisar('Sem conexão com a planilha. Tente de novo.', true);
   }
   S.carregando = false;
   render();
@@ -486,13 +494,27 @@ function render() {
   const tela = document.getElementById('tela');
   const nav = document.getElementById('nav');
   if (!chave) { tela.innerHTML = telaEntrar(); nav.hidden = true; document.getElementById('folha').innerHTML = ''; return; }
+  if (!S.dados && S.erroCarga) {
+    const motivo = S.erroCarga === 'rede' ? 'O celular não conseguiu falar com a planilha. Confira a internet (Wi-Fi ou dados).'
+      : 'A planilha respondeu com erro.';
+    tela.innerHTML = `<div class="carregando" style="display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center">
+      <b style="color:var(--texto)">Não abriu</b><span>${esc(motivo)}</span>
+      <span style="font-size:12px;opacity:.7">Detalhe: ${esc(S.erroCarga)}</span>
+      <button class="principal" data-a="tentar">Tentar de novo</button></div>`;
+    nav.hidden = true; return;
+  }
   if (!S.dados) { tela.innerHTML = '<p class="carregando">Abrindo a planilha…</p>'; nav.hidden = true; carregar(); return; }
   const telas = { inicio: telaInicio, envelopes: telaEnvelopes, mes: telaMes, jornada: telaJornada };
   tela.innerHTML = telas[S.tab]();
   nav.hidden = false;
   nav.innerHTML = [['inicio', 'Início'], ['envelopes', 'Envelopes'], ['mes', 'Mês'], ['jornada', 'Jornada']]
     .map(([id, nome]) => `<button class="${S.tab === id ? 'on' : ''}" data-a="tab" data-v="${id}"><span>${IC[id]}</span>${nome}</button>`).join('');
-  document.getElementById('folha').innerHTML = folhaHtml();
+  // A folha só "sobe" quando abre. Se já estava aberta (ex.: tocou numa tecla),
+  // redesenha sem animar — senão ela desce e volta a cada número.
+  const folha = document.getElementById('folha');
+  const jaAberta = !!folha.querySelector('.folha');
+  folha.innerHTML = folhaHtml();
+  if (jaAberta) folha.querySelectorAll('.folha, .fundo-folha, .lista').forEach((el) => { el.style.animation = 'none'; });
 }
 
 // Troca de aba recomeça a animação e volta ao topo.
@@ -522,6 +544,7 @@ const acoes = {
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
   fechar: () => { S.folha = null; render(); },
   voltar: () => { S.folha.passo--; render(); },
+  tentar: () => { S.erroCarga = ''; render(); },
   tecla: (k) => {
     const f = S.folha; let v = f.valor || '';
     if (k === 'del') v = v.slice(0, -1);
