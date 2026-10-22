@@ -12,7 +12,7 @@ const LIVRE_MINIMO = 0.15; // na divisão, pelo menos 15% fica livre para o dia 
 const CONTA_ENVELOPES = 'Mercado Pago'; // onde mora todo o dinheiro dos envelopes
 const ENV_PREVISTOS = 'Próximos dias';   // envelope dos gastos que já se sabe que vêm
 // Tirar dinheiro de envelope para estas é aceitável; para o resto, o app pergunta duas vezes.
-const ESSENCIAIS = ['Mercado/caderneta', 'Luisa Amélia', 'Contas da casa', 'Dívidas'];
+const ESSENCIAIS = ['Mercado/caderneta', 'Alimentação', 'Luisa Amélia', 'Contas da casa', 'Dívidas'];
 
 // ---------- Memória do celular (só a chave e preferências) ----------
 // Pode falhar (aba anônima, iPhone que limpou dados): por isso o try/catch.
@@ -152,6 +152,22 @@ function resumoPrevistos(hoje) {
   lista.forEach((c) => { const g = c.categoria || 'Outro'; (grupos[g] = grupos[g] || []).push(c); });
   return { lista, ateAmanha: ate(1), ateSemana: ate(7), ateMes: ate(31), total: lista.reduce((s, c) => s + c.valor, 0), grupos };
 }
+// Previsto cuja data já passou: o app pergunta, uma resposta de um toque.
+// Sem isso, um gasto que não aconteceu ficaria prendendo dinheiro para sempre.
+function cartaoPassou(hoje) {
+  const c = previstos().find((x) => x.proximaData && diasAte(x.proximaData, hoje) < 0);
+  if (!c) return '';
+  const n = -diasAte(c.proximaData, hoje);
+  return `<section class="cartao" style="display:flex;flex-direction:column;gap:12px;border:1px solid var(--laranja)">
+    <span class="rotulo" style="color:var(--laranja-txt)">${n === 1 ? 'Ontem' : 'Há ' + n + ' dias'} estava previsto</span>
+    <b style="font-size:17px">${esc(c.nome)} · ${priv(brl(c.valor))}</b>
+    <span class="sub" style="font-size:13px">Aconteceu?</span>
+    <div class="chips">
+      <button class="chip on" data-a="verPrevGastar" data-v="${esc(c.nome)}">Sim, anotar</button>
+      <button class="chip" data-a="prevNao" data-v="${esc(c.nome)}">Não aconteceu</button>
+      <button class="chip" data-a="prevAdiar" data-v="${esc(c.nome)}">Ficou para amanhã</button>
+    </div></section>`;
+}
 function quandoPrev(iso, hoje) {
   if (!iso) return 'sem data';
   const n = diasAte(iso, hoje);
@@ -279,6 +295,7 @@ function telaInicio() {
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
     ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))}</b></div>`).join('')}</div>` : ''}
   </section>
+  ${cartaoPassou(hoje)}
   ${din.faltaMandar > 1 ? `<button class="faixa-alerta" style="text-align:left;width:100%;border-color:var(--azul);color:var(--azul-txt)" data-a="mandarMP" data-v="${din.faltaMandar}">Falta mandar <b>${priv(brl(din.faltaMandar))}</b> para o ${CONTA_ENVELOPES}: é dinheiro de envelope que ainda está no Inter. <b style="color:var(--texto)">Já mandei →</b></button>` : ''}
   ${semInicial.length ? `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="saldoIni">Falta dizer quanto tem em: <b>${semInicial.map(esc).join(', ')}</b>. Sem isso o saldo começa do zero. <b style="color:var(--texto)">Toque para preencher →</b></button>` : ''}
 
@@ -475,6 +492,7 @@ function folhaHtml() {
         <div class="lista-linha"><span style="color:var(--apagado)">Quando</span><b>${quandoPrev(c.proximaData, d.hoje)}</b></div>
         ${c.obs ? `<div class="lista-linha"><span style="color:var(--apagado)">Quem anotou</span><b>${esc(c.obs.replace('Previsto por ', ''))}</b></div>` : ''}</div>
       <button class="principal" style="background:var(--laranja)" data-a="prevGastar">Aconteceu: anotar o gasto</button>
+      <button class="principal" style="background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button>
       <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
   } else if (f.tipo === 'mandarMP') {
     corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">${brl(f.valorNum, true)}</b>
@@ -492,7 +510,7 @@ function folhaHtml() {
     const cats = (d.categorias || []).filter((c) => c.tipo === (f.tipo === 'entrada' ? 'entrada' : 'saida')).map((c) => c.nome);
     const novaCat = f.criandoCat
       ? `<div style="display:flex;gap:6px;width:100%"><input id="campo-novacat" class="campo" placeholder="nome da categoria" value="${esc(f.novaCat || '')}" data-campo="novaCat"><button class="chip on" data-a="salvarCat" ${f.salvando ? 'disabled' : ''}>Criar</button></div>`
-      : '<button class="chip novo" data-a="criarCat">+ Nova</button>';
+      : '<button class="chip novo" data-a="criarCat">+ Nova categoria</button>';
     const quemDeQuem = `<div style="display:flex;flex-wrap:wrap;gap:16px">
         <div class="grupo"><span>Quem</span><div class="chips">${chips(['Gabriel', 'Débora'], 'quem', f.quem)}</div></div>
         ${f.tipo === 'mover' || f.tipo === 'guardar' ? '' : `<div class="grupo"><span>De quem é</span><div class="chips">${chips(['Pessoal', 'Automy'], 'deQuem', f.deQuem)}</div></div>`}</div>`;
@@ -691,6 +709,15 @@ const acoes = {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
     abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null });
     render();
+  },
+  verPrevGastar: (v) => { S.folha = { tipo: 'prevVer', nome: v }; acoes.prevGastar(); },
+  prevNao: async (v) => {
+    try { await api('previstoCancelar', { nome: v }); avisar('Certo, tirado. O dinheiro dele voltou a ficar livre'); carregar(); }
+    catch (e) { if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); }
+  },
+  prevAdiar: async (v) => {
+    try { await api('previstoAdiar', { nome: v, data: dataDoQuando('Amanhã') }); S.folha = null; avisar('Passou para amanhã'); carregar(); }
+    catch (e) { if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); }
   },
   prevCancelar: async () => {
     const f = S.folha;
