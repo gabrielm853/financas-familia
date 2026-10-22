@@ -511,6 +511,11 @@ function folhaHtml() {
     const novaCat = f.criandoCat
       ? `<div style="display:flex;gap:6px;width:100%"><input id="campo-novacat" class="campo" placeholder="nome da categoria" value="${esc(f.novaCat || '')}" data-campo="novaCat"><button class="chip on" data-a="salvarCat" ${f.salvando ? 'disabled' : ''}>Criar</button></div>`
       : '<button class="chip novo" data-a="criarCat">+ Nova categoria</button>';
+    // Modo "tirar": cada categoria vira um botão de remover (dois toques).
+    const catChips = (lista) => f.tirandoCat
+      ? lista.filter((n) => n !== 'Outro').map((n) => `<button class="chip" style="border:1px solid var(--vermelho-txt);color:${f.tirarCat === n ? 'var(--fundo)' : 'var(--vermelho-txt)'};background:${f.tirarCat === n ? '#FCA5A5' : 'none'}" data-a="tirarCat" data-v="${esc(n)}">${f.tirarCat === n ? 'Tirar ' + esc(n) + '?' : esc(n) + ' ×'}</button>`).join('')
+        + '<button class="chip on" data-a="modoTirar">Pronto</button>'
+      : chips(lista, 'cat', f.cat) + novaCat + '<button class="chip novo" data-a="modoTirar">Tirar</button>';
     const quemDeQuem = `<div style="display:flex;flex-wrap:wrap;gap:16px">
         <div class="grupo"><span>Quem</span><div class="chips">${chips(['Gabriel', 'Débora'], 'quem', f.quem)}</div></div>
         ${f.tipo === 'mover' || f.tipo === 'guardar' ? '' : `<div class="grupo"><span>De quem é</span><div class="chips">${chips(['Pessoal', 'Automy'], 'deQuem', f.deQuem)}</div></div>`}</div>`;
@@ -518,7 +523,7 @@ function folhaHtml() {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
         <div class="grupo"><span>Quando</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
-        <div class="grupo"><span>Para quê</span><div class="chips">${chips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome), 'cat', f.cat)}${novaCat}</div></div>
+        <div class="grupo"><span>Para quê</span><div class="chips">${catChips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome))}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
         <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Anotar previsto'}</button>`;
     } else if (f.tipo === 'entrada' || f.tipo === 'saida') {
@@ -547,7 +552,7 @@ function folhaHtml() {
       }
       const precisaConfirmar = doEnvelope && f.cat && ESSENCIAIS.indexOf(f.cat) < 0;
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
-        <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${chips(cats, 'cat', f.cat)}${novaCat}</div></div>
+        <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${catChips(cats)}</div></div>
         ${f.tipo === 'saida' ? `<div class="grupo"><label for="campo-item">O que exatamente (opcional)</label><input id="campo-item" class="campo" placeholder="ex.: fralda pacote G" value="${esc(f.item)}" data-campo="item"></div>
         <div class="grupo"><label for="campo-lugar">Onde comprou (para comparar preço)</label><input id="campo-lugar" class="campo" placeholder="ex.: mercadinho Y" value="${esc(f.lugar)}" data-campo="lugar"></div>` : ''}
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'Caiu em qual conta' : 'Saiu de qual conta'}</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
@@ -767,6 +772,19 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  modoTirar: () => { const f = S.folha; f.tirandoCat = !f.tirandoCat; f.tirarCat = null; render(); },
+  tirarCat: async (v) => {
+    const f = S.folha;
+    if (f.tirarCat !== v) { f.tirarCat = v; render(); return; }
+    const tipo = f.tipo === 'entrada' ? 'entrada' : 'saida';
+    try {
+      await api('categoriaTirar', { nome: v, tipo });
+      S.dados.categorias = S.dados.categorias.filter((c) => !(c.nome === v && c.tipo === tipo));
+      if (f.cat === v) f.cat = null;
+      f.tirarCat = null; avisar(v + ' tirada. Os gastos antigos dela continuam contando');
+    } catch (e) { if (e.message !== 'chave') avisar('Não tirou. Tente de novo.', true); }
+    render();
+  },
   salvarCat: async () => {
     const f = S.folha, nome = (f.novaCat || '').trim();
     if (!nome) return;
