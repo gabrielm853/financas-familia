@@ -256,9 +256,10 @@ function telaInicio() {
           <span class="cresce"><small>${sub}</small><b>${topoTxt}</b></span>
           <span class="seta ${S.vencAberto ? 'virada' : ''}" style="color:var(--apagado)">${IC.seta}</span></button>
         ${S.vencAberto ? `<div class="venc-corpo">${lista.map((c) => `
-          <div class="venc-item"><span class="quando">${c.situacao === 'atrasado' ? '<span class="etiqueta perigo">atrasada</span>' : (c.proximaData ? diaMes(c.proximaData) : '—')}</span>
+          <button class="venc-item" style="width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer" data-a="editarFixa" data-v="${esc(c.nome)}"><span class="quando">${c.situacao === 'atrasado' ? '<span class="etiqueta perigo">atrasada</span>' : (c.proximaData ? diaMes(c.proximaData) : '—')}</span>
             <span class="cresce"><b>${esc(c.nome)}</b><small>${esc(c.obs || c.credor || '')}</small></span>
-            <b style="font-size:14px">${c.valor ? priv(brl(c.valor, true)) : '—'}</b></div>`).join('')}</div>` : ''}
+            <b style="font-size:14px">${c.valor ? priv(brl(c.valor, true)) : '—'}</b></button>`).join('')}
+          <button class="link" style="padding:12px 0" data-a="novaFixa">+ Nova conta fixa</button></div>` : ''}
       </div>`;
     }
   }
@@ -465,7 +466,7 @@ function folhaHtml() {
   const d = S.dados;
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
-    previsto: 'Vai ter gasto', prevVer: f.nome || '', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    previsto: 'Vai ter gasto', prevVer: f.nome || '', fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -494,6 +495,19 @@ function folhaHtml() {
       <button class="principal" style="background:var(--laranja)" data-a="prevGastar">Aconteceu: anotar o gasto</button>
       <button class="principal" style="background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button>
       <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
+  } else if (f.tipo === 'fixa') {
+    const repete = [['mensal', 'Todo mês'], ['bimestral', 'A cada 2 meses'], ['trimestral', 'A cada 3 meses']];
+    const envs = (d.envelopes || []).filter((e) => e.nome !== ENV_PREVISTOS).map((e) => e.nome);
+    corpo = `<div class="grupo"><label for="fx-nome">Nome</label><input id="fx-nome" class="campo" placeholder="ex.: Internet" value="${esc(f.nome)}" data-campo="nome"></div>
+      <div style="display:flex;gap:10px">
+        <div class="grupo" style="flex:1"><label for="fx-valor">Valor (R$)</label><input id="fx-valor" class="campo" inputmode="decimal" placeholder="ex.: 100" value="${esc(f.valorTxt)}" data-campo="valorTxt"></div>
+        <div class="grupo" style="flex:1"><label for="fx-dia">Dia do mês</label><input id="fx-dia" class="campo" inputmode="numeric" placeholder="ex.: 10" value="${esc(f.dia)}" data-campo="dia"></div></div>
+      <p class="nota" style="margin:-6px 0 0">Não sabe ainda? Deixe em branco e preencha quando a conta chegar.</p>
+      <div class="grupo"><span>Repete</span><div class="chips">${repete.map(([v, t]) => `<button class="chip ${f.repete === v ? 'on' : ''}" data-a="campo" data-v="repete|${v}">${t}</button>`).join('')}</div></div>
+      <div class="grupo"><label for="fx-parc">Quantas parcelas faltam? (em branco = sem fim)</label><input id="fx-parc" class="campo" inputmode="numeric" placeholder="sem fim" value="${esc(f.parcelas)}" data-campo="parcelas"></div>
+      <div class="grupo"><span>Sai de qual envelope</span><div class="chips">${chips(envs, 'envelope', f.envelope)}</div></div>
+      <button class="principal" style="background:var(--azul)" data-a="salvarFixa" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>
+      ${f.nomeAntigo ? `<button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="encerrarFixa">${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não existe mais'}</button>` : ''}`;
   } else if (f.tipo === 'mandarMP') {
     corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">${brl(f.valorNum, true)}</b>
       <p class="sub" style="font-size:14px;line-height:1.55;margin:0">Esse é o dinheiro que acabou de ganhar destino nos envelopes. Faça a transferência no app do banco: <b style="color:var(--texto)">${esc(f.conta)} → ${CONTA_ENVELOPES}</b>.
@@ -557,7 +571,7 @@ function folhaHtml() {
         <div class="grupo"><label for="campo-lugar">Onde comprou (para comparar preço)</label><input id="campo-lugar" class="campo" placeholder="ex.: mercadinho Y" value="${esc(f.lugar)}" data-campo="lugar"></div>` : ''}
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'Caiu em qual conta' : 'Saiu de qual conta'}</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
         ${alertaEnv}
-        ${f.tipo === 'saida' && compromissos.length ? `<div class="grupo"><span>É uma conta ou um gasto previsto? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}</div></div>` : ''}
+        ${f.tipo === 'saida' && compromissos.length ? `<div class="grupo"><span>É uma conta ou um gasto previsto? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}<button class="chip novo" data-a="novaFixa">+ Nova conta fixa</button></div></div>` : ''}
         ${quemDeQuem}
         <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : precisaConfirmar ? (f.confirmarTirar ? 'Sim, é importante: tirar' : 'Tirar do envelope') : 'Anotar saída')}</button>`;
     } else if (f.tipo === 'mover') {
@@ -772,6 +786,49 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  novaFixa: () => {
+    // Vindo do "Saiu": guarda a anotação para voltar a ela depois de criar.
+    const anterior = S.folha && S.folha.tipo === 'saida' ? S.folha : null;
+    S.folha = { tipo: 'fixa', nome: '', valorTxt: '', dia: '', repete: 'mensal', parcelas: '', envelope: 'Contas da casa', anterior };
+    render();
+  },
+  editarFixa: (v) => {
+    const c = (S.dados.compromissos || []).find((x) => x.nome === v);
+    if (!c) return;
+    if (ehPrevisto(c)) { S.folha = { tipo: 'prevVer', nome: v }; render(); return; }
+    S.folha = { tipo: 'fixa', nomeAntigo: c.nome, nome: c.nome, valorTxt: c.valor ? String(c.valor).replace('.', ',') : '',
+      dia: c.diaDoMes ? String(c.diaDoMes) : '', repete: c.repete || 'mensal', parcelas: c.parcelasRestantes === '' || c.parcelasRestantes == null ? '' : String(c.parcelasRestantes),
+      envelope: c.envelope || '' };
+    render();
+  },
+  salvarFixa: async () => {
+    const f = S.folha;
+    const nome = (f.nome || '').trim();
+    if (!nome) { avisar('Escreva o nome.', true); return; }
+    const dia = (f.dia || '').trim();
+    if (dia && !(Number(dia) >= 1 && Number(dia) <= 31)) { avisar('O dia vai de 1 a 31.', true); return; }
+    f.salvando = true; render();
+    try {
+      await api('contaFixa', { nomeAntigo: f.nomeAntigo || '', nome, valor: parseFloat((f.valorTxt || '').replace(/\./g, '').replace(',', '.')) || '',
+        dia, repete: f.repete, parcelas: (f.parcelas || '').trim(), envelope: f.envelope || '' });
+      const volta = f.anterior;
+      S.folha = volta || null;
+      if (volta) volta.compromisso = nome;
+      avisar(f.nomeAntigo ? 'Conta atualizada' : 'Conta fixa criada');
+      await carregar();
+    } catch (e) {
+      f.salvando = false;
+      if (e.message !== 'chave') avisar(e.message === 'ja_existe' ? 'Já existe uma conta com esse nome.' : 'Não salvou. Tente de novo.', true);
+      render();
+    }
+  },
+  encerrarFixa: async () => {
+    const f = S.folha;
+    if (!f.confirmarCancelar) { f.confirmarCancelar = true; render(); return; }
+    f.salvando = true; render();
+    try { await api('contaFixaEncerrar', { nome: f.nomeAntigo }); S.folha = null; avisar('Tirada da lista'); carregar(); }
+    catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
   modoTirar: () => { const f = S.folha; f.tirandoCat = !f.tirandoCat; f.tirarCat = null; render(); },
   tirarCat: async (v) => {
     const f = S.folha;
