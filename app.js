@@ -119,7 +119,7 @@ function avisar(texto, erro) {
 // ---------- Contas derivadas dos dados ----------
 function contasAtivas() { return (S.dados.contas || []).filter((c) => c.ativa); }
 function situacaoEnvelope(e, hoje) {
-  if (!e.meta) return { txt: 'Sem meta', cls: 'info', cor: '#93B4FF' };
+  if (!e.meta) return { txt: e.nome === ENV_PREVISTOS ? 'Nada previsto' : 'Sem meta', cls: 'info', cor: '#93B4FF' };
   if (e.guardado >= e.meta) return { txt: 'Completo', cls: 'info', cor: '#93B4FF' };
   if (e.dataAlvo && diasAte(e.dataAlvo, hoje) <= 14) return { txt: 'Falta pouco tempo', cls: 'atencao', cor: '#F5A524' };
   return { txt: 'Juntando', cls: 'ok', cor: '#6EE7A0' };
@@ -134,13 +134,23 @@ function contasDoDinheiro() {
   const envPrev = (d.envelopes || []).find((e) => e.nome === ENV_PREVISTOS);
   const prevSemDinheiro = envPrev ? Math.max(0, envPrev.meta - Math.max(0, envPrev.guardado)) : 0;
   const mp = contas.find((c) => c.nome === CONTA_ENVELOPES);
-  // Quanto do dinheiro de envelope ainda está fora do Mercado Pago.
-  const faltaMandar = mp && mp.temSaldoInicial ? Math.max(0, Math.round(guardado - mp.saldo)) : 0;
+  // Quanto do dinheiro de envelope ainda está fora do Mercado Pago. O dos
+  // "Próximos dias" não conta: é para gastar logo, fica no Inter.
+  const guardadoMP = guardado - (envPrev ? Math.max(0, envPrev.guardado) : 0);
+  const faltaMandar = mp && mp.temSaldoInicial ? Math.max(0, Math.round(guardadoMP - mp.saldo)) : 0;
   return { nasContas, guardado, prevSemDinheiro, livre: nasContas - guardado - prevSemDinheiro, faltaMandar };
 }
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
 function previstos() {
   return (S.dados.compromissos || []).filter(ehPrevisto).sort((a, b) => (a.proximaData || '9').localeCompare(b.proximaData || '9'));
+}
+// O que precisa estar à mão em cada prazo, e os previstos agrupados por categoria.
+function resumoPrevistos(hoje) {
+  const lista = previstos();
+  const ate = (dias) => lista.filter((c) => c.proximaData && diasAte(c.proximaData, hoje) <= dias).reduce((s, c) => s + c.valor, 0);
+  const grupos = {};
+  lista.forEach((c) => { const g = c.categoria || 'Outro'; (grupos[g] = grupos[g] || []).push(c); });
+  return { lista, ateAmanha: ate(1), ateSemana: ate(7), ateMes: ate(31), total: lista.reduce((s, c) => s + c.valor, 0), grupos };
 }
 function quandoPrev(iso, hoje) {
   if (!iso) return 'sem data';
@@ -282,7 +292,7 @@ function telaInicio() {
   <section style="display:flex;flex-direction:column;gap:8px">
     <div class="secao"><h2>Vai ter gasto</h2><button class="link" data-a="nova" data-v="previsto">+ Adicionar</button></div>
     ${prevs.length ? `<div class="lista">${prevs.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer" data-a="verPrev" data-v="${esc(c.nome)}">
-      <span style="display:flex;flex-direction:column"><b style="font-weight:600">${esc(c.nome)}</b><small style="color:var(--apagado)">${quandoPrev(c.proximaData, hoje)}</small></span><b>${priv(brl(c.valor))}</b></button>`).join('')}</div>`
+      <span style="display:flex;flex-direction:column"><b style="font-weight:600">${esc(c.nome)}</b><small style="color:var(--apagado)">${c.categoria ? esc(c.categoria) + ' · ' : ''}${quandoPrev(c.proximaData, hoje)}</small></span><b>${priv(brl(c.valor))}</b></button>`).join('')}</div>`
       : '<p class="vazio">Lembrou de um gasto que vem aí (cabelo, compra na cidade)? Anote aqui: a divisão passa a guardar dinheiro para ele.</p>'}
   </section>
 
@@ -320,6 +330,29 @@ function linhaRegistro(r) {
     <span class="valor" style="${t.cor}">${r.tipo === 'sem_gasto' ? '' : t.sinal + priv(brl(r.valor, true))}</span></button>`;
 }
 
+function corpoPrevistos(e, hoje) {
+  const r = resumoPrevistos(hoje);
+  const falta = Math.max(0, r.total - Math.max(0, e.guardado));
+  const prazo = (rotulo, v) => `<div class="par"><span>${rotulo}</span><b>${priv(brl(v, true))}</b></div>`;
+  return `<div class="env-corpo">
+    ${r.lista.length ? `
+      <div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(r.total)}</b></div>
+      <div class="barra"><i style="width:${r.total ? Math.min(100, e.guardado / r.total * 100) : 0}%;background:var(--azul)"></i></div>
+      ${falta ? `<div class="par"><span>Falta guardar</span><b style="color:var(--laranja-txt)">${brl(falta, true)}</b></div>` : ''}
+      <p class="nota" style="margin:4px 0 0">Precisa estar no Inter:</p>
+      ${prazo('Até amanhã', r.ateAmanha)}${prazo('Nos próximos 7 dias', r.ateSemana)}${prazo('Até o fim do mês', r.ateMes)}
+      ${Object.keys(r.grupos).map((g) => `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+        <div class="par"><b style="color:var(--texto)">${esc(g)}</b><b>${priv(brl(r.grupos[g].reduce((s, c) => s + c.valor, 0)))}</b></div>
+        ${r.grupos[g].map((c) => `<button class="par" style="background:none;border:0;color:inherit;font:inherit;padding:0 0 0 10px;text-align:left;cursor:pointer" data-a="verPrev" data-v="${esc(c.nome)}">
+          <span>${esc(c.nome)} <small style="color:var(--apagado)">· ${quandoPrev(c.proximaData, hoje)}</small></span><span>${priv(brl(c.valor))}</span></button>`).join('')}
+      </div>`).join('')}`
+    : '<p class="nota">Nenhum gasto previsto ainda. Anote o que vem aí (leite, fralda, cabelo...) e o envelope passa a saber quanto precisa.</p>'}
+    <p class="nota">Este dinheiro fica no Inter, não vai para o ${CONTA_ENVELOPES}: é para gastar logo.</p>
+    <button class="principal" style="background:var(--laranja);font-size:14px;min-height:48px" data-a="nova" data-v="previsto">+ Vai ter gasto</button>
+    <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
+  </div>`;
+}
+
 function telaEnvelopes() {
   const d = S.dados;
   return `<div><h1 class="titulo">Envelopes</h1><p class="sub">Toque em um para ver o sugerido e o real.</p></div>
@@ -333,7 +366,8 @@ function telaEnvelopes() {
       <button class="env-topo" data-a="env" data-v="${esc(e.nome)}" aria-expanded="${aberto}">${anel(e.meta ? e.guardado / e.meta : 0, 52, 6, st.cor)}
         <span class="cresce"><b style="font-size:15px;font-weight:700">${esc(e.nome)}</b><small style="font-size:13px">${priv(brl(e.guardado))}${e.meta ? ' de ' + brl(e.meta) : ''}</small></span>
         <span class="etiqueta ${st.cls}">${st.txt}</span></button>
-      ${aberto ? `<div class="env-corpo">
+      ${aberto && e.nome === ENV_PREVISTOS ? corpoPrevistos(e, d.hoje) : ''}
+      ${aberto && e.nome !== ENV_PREVISTOS ? `<div class="env-corpo">
         ${e.meta ? `<div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(e.meta)}</b></div>
         <div class="barra"><i style="width:${pct}%;background:${st.cor}"></i></div>
         <div class="par"><span>Falta</span><b>${brl(Math.max(0, e.meta - e.guardado), true)}${e.dataAlvo ? ' até ' + diaMes(e.dataAlvo) : ''}</b></div>` : '<p class="nota">Sem meta ainda. Dá para pôr na planilha, aba Envelopes, coluna meta.</p>'}
@@ -466,6 +500,7 @@ function folhaHtml() {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
         <div class="grupo"><span>Quando</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
+        <div class="grupo"><span>Para quê</span><div class="chips">${chips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome), 'cat', f.cat)}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
         <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Anotar previsto'}</button>`;
     } else if (f.tipo === 'entrada' || f.tipo === 'saida') {
@@ -513,7 +548,8 @@ function folhaHtml() {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><span>Esse dinheiro está em qual conta agora?</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
         ${quemDeQuem}
-        <p class="sub" style="font-size:13px;line-height:1.5">${f.conta === CONTA_ENVELOPES ? `Já está no ${CONTA_ENVELOPES}: ele só passa a ter destino, ${esc(f.envelope)}.`
+        <p class="sub" style="font-size:13px;line-height:1.5">${f.envelope === ENV_PREVISTOS ? `O dinheiro fica no ${esc(f.conta)}: é para gastar logo. Ele só passa a ter destino.`
+          : f.conta === CONTA_ENVELOPES ? `Já está no ${CONTA_ENVELOPES}: ele só passa a ter destino, ${esc(f.envelope)}.`
           : `Faça a transferência no banco: <b style="color:var(--texto)">${esc(f.conta)} → ${CONTA_ENVELOPES}</b>. O app anota as duas coisas: a mudança de conta e o destino, ${esc(f.envelope)}.`}</p>
         <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Guardando…' : 'Guardar'}</button>`;
     }
@@ -574,7 +610,7 @@ async function salvarFolha() {
     pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.para, deQuem: 'Pessoal' });
     msg = 'Movido. Não conta como gasto';
   } else if (f.tipo === 'guardar') {
-    pedido = Object.assign(base, { tipo: 'mover', contaDestino: CONTA_ENVELOPES, envelope: f.envelope, deQuem: 'Pessoal',
+    pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.envelope === ENV_PREVISTOS ? f.conta : CONTA_ENVELOPES, envelope: f.envelope, deQuem: 'Pessoal',
       divisao: [{ envelope: f.envelope, sugerido: valor, real: valor }], obs: 'guardar no envelope' });
     msg = 'Guardado em ' + f.envelope;
   }
@@ -583,7 +619,7 @@ async function salvarFolha() {
     await api('registrar', pedido);
     S.folha = null;
     // Dividiu dinheiro que caiu fora do Mercado Pago: já pede para mandar.
-    const paraMandar = f.tipo === 'entrada' ? f.div.reduce((s, l) => s + l.real, 0) : 0;
+    const paraMandar = f.tipo === 'entrada' ? f.div.filter((l) => l.envelope !== ENV_PREVISTOS).reduce((s, l) => s + l.real, 0) : 0;
     if (paraMandar > 0 && f.conta !== CONTA_ENVELOPES && contasAtivas().some((c) => c.nome === CONTA_ENVELOPES)) {
       S.folha = { tipo: 'mandarMP', valorNum: paraMandar, conta: f.conta, quem: f.quem };
     }
@@ -653,7 +689,7 @@ const acoes = {
   verPrev: (v) => { S.folha = { tipo: 'prevVer', nome: v }; render(); },
   prevGastar: () => {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
-    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome });
+    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null });
     render();
   },
   prevCancelar: async () => {
@@ -670,7 +706,7 @@ const acoes = {
     if (!f.quando) { avisar('Escolha quando.', true); return; }
     f.salvando = true; render();
     try {
-      await api('previsto', { nome, valor: parseFloat(f.valor.replace(',', '.')) || 0, data: dataDoQuando(f.quando), quem: eu });
+      await api('previsto', { nome, valor: parseFloat(f.valor.replace(',', '.')) || 0, data: dataDoQuando(f.quando), quem: eu, categoria: f.cat || 'Outro' });
       S.folha = null; avisar('Previsto anotado'); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
   },
