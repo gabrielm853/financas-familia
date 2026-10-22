@@ -159,6 +159,15 @@ function passaDoLivre(f, valorNum) {
   return Object.assign({ livre, falta }, planoTirar(falta));
 }
 
+// A chave Pix vem da planilha (aba Config), nunca do código: o app é público.
+function caixaPix() {
+  const pix = S.dados && S.dados.pixMP;
+  if (!pix) return '';
+  return `<div class="lista-linha" style="background:var(--cartao2);border-radius:14px;padding:12px 14px">
+    <span style="display:flex;flex-direction:column"><small style="color:var(--apagado)">Chave Pix do ${CONTA_ENVELOPES}</small><b style="font-size:17px;letter-spacing:.02em">${esc(pix)}</b></span>
+    <button class="chip on" data-a="copiarPix">Copiar</button></div>`;
+}
+
 // "1.234,56" → 1234.56
 const numBR = (t) => parseFloat(String(t || '').replace(/\./g, '').replace(',', '.')) || 0;
 const txtBR = (n) => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',');
@@ -593,6 +602,7 @@ function folhaHtml() {
     corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">${brl(f.valorNum, true)}</b>
       <p class="sub" style="font-size:14px;line-height:1.55;margin:0">Esse é o dinheiro que acabou de ganhar destino nos envelopes. Faça a transferência no app do banco: <b style="color:var(--texto)">${esc(f.conta)} → ${CONTA_ENVELOPES}</b>.
       Assim ele sai da vista e para de parecer dinheiro para gastar.</p>
+      ${caixaPix()}
       <div class="grupo"><span>Sai de qual conta</span><div class="chips">${chips(nomesContas.filter((n) => n !== CONTA_ENVELOPES), 'conta', f.conta)}</div></div>
       <button class="principal" style="background:${cor}" data-a="jaMandei" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Já mandei, anotar'}</button>
       <button class="link cinza" style="align-self:center" data-a="fechar">Mando depois (fica um lembrete no início)</button>`;
@@ -891,6 +901,16 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  copiarPix: async () => {
+    const pix = S.dados.pixMP;
+    try { await navigator.clipboard.writeText(pix); avisar('Chave copiada. Cole no Pix do banco'); }
+    catch (e) {
+      // Navegador sem permissão de copiar: usa o jeito antigo.
+      const t = document.createElement('textarea'); t.value = pix; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); avisar('Chave copiada. Cole no Pix do banco'); } catch (e2) { avisar('Não copiou. A chave é ' + pix, true); }
+      t.remove();
+    }
+  },
   acertar: () => {
     const contas = {}, envs = {};
     contasAtivas().forEach((c) => { contas[c.nome] = txtBR(c.saldo); });
