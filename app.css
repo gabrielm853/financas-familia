@@ -210,11 +210,22 @@ input { font-family: inherit; }
 .teclado button:active { background: var(--trilho); }
 .principal { min-height: 58px; border-radius: 18px; font-size: 16px; font-weight: 800; color: var(--fundo); box-shadow: 0 10px 26px rgba(0,0,0,.3); }
 .grupo { display: flex; flex-direction: column; gap: 8px; }
-.grupo > label, .grupo > span { font-size: 12px; color: var(--apagado); font-weight: 700; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { min-height: 42px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 600; border: 1px solid var(--trilho); background: var(--cartao2); color: var(--texto2); }
-.chip.on { border-color: rgba(91,227,164,.7); background: linear-gradient(135deg, rgba(91,227,164,.2), rgba(34,195,166,.1)); color: var(--texto); }
-.chip.novo { border-style: dashed; color: var(--apagado); background: transparent; }
+.grupo > label, .grupo > span { font-size: 11px; color: var(--apagado); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding-left: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; min-height: 44px; padding: 0 18px; border-radius: 14px; font-size: 14px; font-weight: 650; letter-spacing: .01em;
+  border: 1px solid rgba(255,255,255,.07); color: var(--texto2);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)), var(--cartao2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 2px 6px rgba(0,0,0,.25);
+  transition: transform .12s ease, background .2s ease, color .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.chip:active { transform: scale(.95); }
+.chip.on { color: #06221A; border-color: transparent; padding-left: 14px;
+  background: linear-gradient(135deg, #6EF0B4, #22C3A6);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 18px rgba(34,195,166,.35); }
+.chip.on:not([data-a="campo"]):not([data-a="eu"]) { padding-left: 18px; }
+.chip.on[data-a="campo"]::before, .chip.on[data-a="eu"]::before { content: '✓'; display: inline-block; margin-right: 6px; font-weight: 900; animation: marcar .25s ease; }
+@keyframes marcar { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.chip.novo { border: 1px dashed rgba(141,166,255,.45); color: var(--azul); background: rgba(141,166,255,.06); box-shadow: none; }
+.chip[disabled] { opacity: .5; }
 .campo { height: 50px; padding: 0 16px; background: var(--fundo); border: 1px solid var(--trilho); border-radius: 16px; outline: none; color: var(--texto); font-size: 16px; width: 100%; color-scheme: dark; }
 .campo:focus { border-color: var(--azul); box-shadow: 0 0 0 4px rgba(141,166,255,.12); }
 .linha-div { background: var(--cartao2); border: 1px solid var(--linha); border-radius: 18px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 8px; }
