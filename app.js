@@ -12,6 +12,7 @@ const LIVRE_MINIMO = 0.15; // na divisão, pelo menos 15% fica livre para o dia 
 const CONTA_ENVELOPES = 'Mercado Pago'; // onde mora todo o dinheiro dos envelopes
 const ENV_PREVISTOS = 'Próximos dias';   // envelope dos gastos que já se sabe que vêm
 // Tirar dinheiro de envelope para estas é aceitável; para o resto, o app pergunta duas vezes.
+const FIADO = 'Fiado na caderneta'; // "conta" de mentira: a compra soma na caderneta, não sai do banco
 const ESSENCIAIS = ['Mercado/caderneta', 'Alimentação', 'Luisa Amélia', 'Contas da casa', 'Dívidas'];
 
 // ---------- Memória do celular (só a chave e preferências) ----------
@@ -194,6 +195,8 @@ function planoTirar(falta) {
   return { plano, naoCobre: resto };
 }
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
+const caderneta = () => (S.dados.compromissos || []).find((c) => /^Caderneta/.test(c.nome));
+const contaDe = (pessoa) => (pessoa === 'Débora' ? 'Inter Débora' : 'Inter Gabriel');
 function previstos() {
   return (S.dados.compromissos || []).filter(ehPrevisto).sort((a, b) => (a.proximaData || '9').localeCompare(b.proximaData || '9'));
 }
@@ -385,7 +388,7 @@ function telaInicio() {
   <section style="display:flex;flex-direction:column;gap:8px">
     <div class="secao"><h2>Vai ter gasto</h2><button class="link" data-a="nova" data-v="previsto">+ Adicionar</button></div>
     ${prevs.length ? `<div class="lista">${prevs.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer" data-a="verPrev" data-v="${esc(c.nome)}">
-      <span style="display:flex;flex-direction:column"><b style="font-weight:600">${esc(c.nome)}</b><small style="color:var(--apagado)">${c.categoria ? esc(c.categoria) + ' · ' : ''}${quandoPrev(c.proximaData, hoje)}</small></span><b>${priv(brl(c.valor))}</b></button>`).join('')}</div>`
+      <span style="display:flex;flex-direction:column"><b style="font-weight:600">${esc(c.nome)}</b><small style="color:var(--apagado)">${c.quem ? esc(c.quem) + ' · ' : ''}${c.categoria ? esc(c.categoria) + ' · ' : ''}${quandoPrev(c.proximaData, hoje)}</small></span><b>${priv(brl(c.valor))}</b></button>`).join('')}</div>`
       : '<p class="vazio">Lembrou de um gasto que vem aí (cabelo, compra na cidade)? Anote aqui: a divisão passa a guardar dinheiro para ele.</p>'}
   </section>
 
@@ -544,7 +547,7 @@ function folhaHtml() {
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)', ajuste: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
     previsto: f.editandoPrev ? 'Editar previsto' : 'Vai ter gasto', prevVer: f.nome || '',
-    ajuste: 'Corrigir saldo', acertar: 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    proxCaderneta: 'Caderneta do próximo mês', ajuste: 'Corrigir saldo', acertar: 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -570,12 +573,18 @@ function folhaHtml() {
     corpo = `<div class="lista" style="background:var(--cartao2)">
         <div class="lista-linha"><span style="color:var(--apagado)">Valor previsto</span><b>${brl(c.valor, true)}</b></div>
         <div class="lista-linha"><span style="color:var(--apagado)">Quando</span><b>${quandoPrev(c.proximaData, d.hoje)}</b></div>
+        ${c.quem ? `<div class="lista-linha"><span style="color:var(--apagado)">Quem vai gastar</span><b>${esc(c.quem)}</b></div>` : ''}
         ${c.obs ? `<div class="lista-linha"><span style="color:var(--apagado)">Quem anotou</span><b>${esc(c.obs.replace('Previsto por ', ''))}</b></div>` : ''}</div>
       <button class="principal" style="background:var(--laranja)" data-a="prevGastar">Aconteceu: anotar o gasto</button>
       <div style="display:flex;gap:10px">
         <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="editarPrev">Editar</button>
         <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button></div>
       <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
+  } else if (f.tipo === 'proxCaderneta') {
+    corpo = `<div class="visor"><span class="sub" style="font-size:13px">Paga. Quanto já está a caderneta nova?</span><b style="color:var(--azul)">R$ ${esc(f.valor || '0')}</b></div>
+      <div class="teclado">${['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((k) => `<button data-a="tecla" data-v="${k}" aria-label="${k === 'del' ? 'Apagar' : k}">${k === 'del' ? '⌫' : k}</button>`).join('')}</div>
+      <p class="sub" style="font-size:12px;line-height:1.5;margin:0">Se ainda não compraram nada, deixe 0. Daqui para a frente, cada compra fiado soma aqui.</p>
+      <button class="principal" style="background:var(--azul)" data-a="salvarProxCad" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>`;
   } else if (f.tipo === 'acertar') {
     const campo = (tipo, nome, valor) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(nome)}</span>
       <input class="campo" style="width:120px;text-align:right;padding:8px 10px;min-height:0" inputmode="decimal" value="${esc(valor)}" data-acerto="${tipo}|${esc(nome)}"></div>`;
@@ -643,6 +652,7 @@ function folhaHtml() {
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
         ${madrugada() ? `<p class="nota" style="margin:0;color:var(--azul-txt)">Já passou da meia-noite: "Hoje" é ${diaMes(d.hoje)}, "Amanhã" é ${diaMes(dataDoQuando('Amanhã'))}.</p>` : ''}
         <div class="grupo"><span>Quando${f.dataAtual && !f.quando ? ` <small style="color:var(--apagado)">(agora: ${quandoPrev(f.dataAtual, d.hoje)})</small>` : ''}</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
+        <div class="grupo"><span>Quem vai gastar</span><div class="chips">${chips(['Gabriel', 'Débora'], 'quemGasta', f.quemGasta)}</div></div>
         <div class="grupo"><span>Para quê</span><div class="chips">${catChips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome))}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
         <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : f.editandoPrev ? 'Salvar' : 'Anotar previsto'}</button>`;
@@ -687,9 +697,10 @@ function folhaHtml() {
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${catChips(cats)}</div></div>
         ${f.tipo === 'saida' ? `<div class="grupo"><label for="campo-item">O que exatamente (opcional)</label><input id="campo-item" class="campo" placeholder="ex.: fralda pacote G" value="${esc(f.item)}" data-campo="item"></div>
         <div class="grupo"><label for="campo-lugar">Onde comprou (para comparar preço)</label><input id="campo-lugar" class="campo" placeholder="ex.: mercadinho Y" value="${esc(f.lugar)}" data-campo="lugar"></div>` : ''}
-        <div class="grupo"><span>${f.tipo === 'entrada' ? 'Caiu em qual conta' : 'Saiu de qual conta'}</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
+        <div class="grupo"><span>${f.tipo === 'entrada' ? 'Caiu em qual conta' : 'Saiu de qual conta'}</span><div class="chips">${chips(f.tipo === 'saida' && caderneta() && !f.compromisso ? nomesContas.concat([FIADO]) : nomesContas, 'conta', f.conta)}</div></div>
+        ${f.conta === FIADO ? `<p class="faixa-alerta" style="margin:0;border-color:var(--azul);color:var(--azul-txt)">Não sai dinheiro agora: soma na caderneta, que vai para ${brl(caderneta().valor + valorNum)}. O dinheiro sai no dia de pagar.</p>` : ''}
         ${alertaEnv}
-        ${f.tipo === 'saida' && compromissos.length ? `<div class="grupo"><span>É uma conta ou um gasto previsto? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}<button class="chip novo" data-a="novaFixa">+ Nova conta fixa</button></div></div>` : ''}
+        ${f.tipo === 'saida' && compromissos.length && f.conta !== FIADO ? `<div class="grupo"><span>É uma conta ou um gasto previsto? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}<button class="chip novo" data-a="novaFixa">+ Nova conta fixa</button></div></div>` : ''}
         ${quemDeQuem}
         <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : precisaConfirmar ? (f.confirmarTirar ? 'Sim, é importante: tirar' : 'Tirar do envelope') : 'Anotar saída')}</button>`;
     } else if (f.tipo === 'mover') {
@@ -736,7 +747,7 @@ function abrirFolha(tipo, extra) {
   const contas = contasAtivas().map((c) => c.nome);
   const minha = eu === 'Débora' ? 'Inter Débora' : 'Inter Gabriel';
   S.folha = Object.assign({ tipo, passo: 1, valor: '', cat: null, item: '', lugar: '', conta: contas.indexOf(minha) >= 0 ? minha : contas[0],
-    para: contas.find((c) => c !== minha) || '', quem: eu, deQuem: 'Pessoal', compromisso: null, div: null, erro: '' }, extra || {});
+    para: contas.find((c) => c !== minha) || '', quem: eu, quemGasta: eu, deQuem: 'Pessoal', compromisso: null, div: null, erro: '' }, extra || {});
 }
 
 async function salvarFolha() {
@@ -744,7 +755,12 @@ async function salvarFolha() {
   const valor = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const base = { valor, quem: f.quem, deQuem: f.deQuem, conta: f.conta };
   let pedido, msg;
-  if (f.tipo === 'saida') {
+  if (f.tipo === 'saida' && f.conta === FIADO) {
+    const cad = caderneta();
+    pedido = Object.assign(base, { tipo: 'saida', conta: '', fiado: true, compromisso: cad.nome, categoria: f.cat || 'Mercado/caderneta',
+      item: f.item, lugar: f.lugar, obs: 'fiado' });
+    msg = 'Anotado na caderneta: agora ' + brl(cad.valor + valor);
+  } else if (f.tipo === 'saida') {
     const doEnvelope = f.conta === CONTA_ENVELOPES && !f.compromisso;
     if (doEnvelope) {
       if (!f.cat) { avisar('Escolha com o quê.', true); return; }
@@ -782,6 +798,10 @@ async function salvarFolha() {
   try {
     await api('registrar', pedido);
     S.folha = null;
+    // Pagou a caderneta: pergunta quanto já ficou a do próximo mês.
+    if (f.tipo === 'saida' && f.conta !== FIADO && f.compromisso && /^Caderneta/.test(f.compromisso) && !f.substitui) {
+      S.folha = { tipo: 'proxCaderneta', nome: f.compromisso, valor: '', erro: '' };
+    }
     // Dividiu dinheiro que caiu fora do Mercado Pago: já pede para mandar.
     const paraMandar = f.tipo === 'entrada' ? f.div.filter((l) => l.envelope !== ENV_PREVISTOS).reduce((s, l) => s + l.real, 0) : 0;
     if (paraMandar > 0 && f.conta !== CONTA_ENVELOPES && contasAtivas().some((c) => c.nome === CONTA_ENVELOPES)) {
@@ -853,7 +873,8 @@ const acoes = {
   verPrev: (v) => { S.folha = { tipo: 'prevVer', nome: v }; render(); },
   prevGastar: () => {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
-    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null });
+    const pessoa = c.quem || eu;
+    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null, quem: pessoa, conta: contaDe(pessoa) });
     render();
   },
   passarParaHoje: async () => {
@@ -889,8 +910,8 @@ const acoes = {
     const valor = parseFloat(f.valor.replace(',', '.')) || 0;
     f.salvando = true; render();
     try {
-      if (f.editandoPrev) await api('previstoEditar', { nomeAntigo: f.editandoPrev, nome, valor, data, categoria: f.cat || 'Outro' });
-      else await api('previsto', { nome, valor, data, quem: eu, categoria: f.cat || 'Outro' });
+      if (f.editandoPrev) await api('previstoEditar', { nomeAntigo: f.editandoPrev, nome, valor, data, categoria: f.cat || 'Outro', quemGasta: f.quemGasta });
+      else await api('previsto', { nome, valor, data, quem: eu, quemGasta: f.quemGasta || eu, categoria: f.cat || 'Outro' });
       S.folha = null; avisar(f.editandoPrev ? 'Previsto atualizado' : 'Previsto anotado'); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar(e.message === 'ja_existe' ? 'Já existe um com esse nome.' : 'Não salvou. Tente de novo.', true); render(); }
   },
@@ -934,6 +955,12 @@ const acoes = {
       t.remove();
     }
   },
+  salvarProxCad: async () => {
+    const f = S.folha;
+    f.salvando = true; render();
+    try { await api('contaFixaValor', { nome: f.nome, valor: numBR(f.valor) }); S.folha = null; avisar('Caderneta nova começou em ' + brl(numBR(f.valor))); await carregar(); }
+    catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
   acertar: () => {
     const contas = {}, envs = {};
     contasAtivas().forEach((c) => { contas[c.nome] = txtBR(c.saldo); });
@@ -968,13 +995,14 @@ const acoes = {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome);
     if (!c) return;
     S.folha = { tipo: 'previsto', passo: 2, valor: String(c.valor || '').replace('.', ','), nomePrev: c.nome, cat: c.categoria || null,
-      quando: null, dataAtual: c.proximaData || '', editandoPrev: c.nome, erro: '' };
+      quando: null, dataAtual: c.proximaData || '', editandoPrev: c.nome, quemGasta: c.quem || eu, erro: '' };
     render();
   },
   editarReg: () => {
     const r = S.folha.reg;
     const comum = { valor: String(r.valor).replace('.', ','), conta: r.conta, quem: r.quem || eu, deQuem: r.deQuem || 'Pessoal', substitui: r.id };
-    if (r.tipo === 'saida') abrirFolha('saida', Object.assign(comum, { cat: r.categoria || null, item: r.item || '', lugar: r.lugar || '', compromisso: r.compromisso || null, envelope: r.envelope || null }));
+    if (r.tipo === 'saida' && r.obs === 'fiado') abrirFolha('saida', Object.assign(comum, { conta: FIADO, cat: r.categoria || null, item: r.item || '', lugar: r.lugar || '' }));
+    else if (r.tipo === 'saida') abrirFolha('saida', Object.assign(comum, { cat: r.categoria || null, item: r.item || '', lugar: r.lugar || '', compromisso: r.compromisso || null, envelope: r.envelope || null }));
     else if (r.tipo === 'entrada') abrirFolha('entrada', Object.assign(comum, { cat: r.categoria || null }));
     else if (r.tipo === 'mover' && r.envelope) abrirFolha('guardar', Object.assign(comum, { envelope: r.envelope }));
     else abrirFolha('mover', Object.assign(comum, { para: r.contaDestino }));
