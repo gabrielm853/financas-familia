@@ -294,7 +294,7 @@ function telaInicio() {
     <span class="saldo-valor" style="${din.livre < 0 ? 'color:var(--vermelho-txt)' : ''}">${priv(brl(din.livre, true))}</span>
     ${din.guardado || din.prevSemDinheiro ? `<span class="sub" style="font-size:12px;line-height:1.5">Já descontado: ${priv(brl(din.guardado))} nos envelopes${din.prevSemDinheiro ? ` e ${priv(brl(din.prevSemDinheiro))} de gastos previstos ainda sem dinheiro guardado` : ''}.</span>` : ''}
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
-    ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))}</b></div>`).join('')}</div>` : ''}
+    ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;border-top:1px solid rgba(255,255,255,.06);color:inherit;font:inherit;cursor:pointer" data-a="ajustar" data-v="${esc(c.nome)}"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))} <small style="color:var(--azul-txt);font-weight:600">editar</small></b></button>`).join('')}</div>` : ''}
   </section>
   ${cartaoPassou(hoje)}
   ${din.faltaMandar > 1 ? `<button class="faixa-alerta" style="text-align:left;width:100%;border-color:var(--azul);color:var(--azul-txt)" data-a="mandarMP" data-v="${din.faltaMandar}">Falta mandar <b>${priv(brl(din.faltaMandar))}</b> para o ${CONTA_ENVELOPES}: é dinheiro de envelope que ainda está no Inter. <b style="color:var(--texto)">Já mandei →</b></button>` : ''}
@@ -392,7 +392,9 @@ function telaEnvelopes() {
         ${e.sugeridoTotal || e.realTotal ? `<div class="par"><span>Já dividido: sugerido × real</span><b>${brl(e.sugeridoTotal)} × ${brl(e.realTotal)} ${dif ? `<span class="etiqueta ${dif < 0 ? 'atencao' : 'info'}">${dif < 0 ? '−' : '+'}${brl(Math.abs(dif))}</span>` : ''}</b></div>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
-        ${e.guardado > 0 ? `<button class="link cinza" style="align-self:center" data-a="tirarEnv" data-v="${esc(e.nome)}">Tirar dinheiro daqui</button>` : ''}
+        <div style="display:flex;justify-content:center;gap:22px">
+          <button class="link" data-a="editarEnv" data-v="${esc(e.nome)}">Editar meta e data</button>
+          ${e.guardado > 0 ? `<button class="link cinza" data-a="tirarEnv" data-v="${esc(e.nome)}">Tirar dinheiro daqui</button>` : ''}</div>
       </div>` : ''}
     </div>`;
   }).join('')}
@@ -464,9 +466,10 @@ function folhaHtml() {
   const f = S.folha;
   if (!f) return '';
   const d = S.dados;
-  const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)' }[f.tipo] || 'var(--verde)';
+  const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)', ajuste: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
-    previsto: 'Vai ter gasto', prevVer: f.nome || '', fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    previsto: f.editandoPrev ? 'Editar previsto' : 'Vai ter gasto', prevVer: f.nome || '',
+    ajuste: 'Corrigir saldo', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -484,7 +487,8 @@ function folhaHtml() {
     const linhas = [['Tipo', { entrada: 'Entrada', saida: 'Saída', mover: 'Mover', sem_gasto: 'Dia sem gasto' }[r.tipo]], ['Valor', brl(r.valor, true)], ['Categoria', r.categoria], ['Item', r.item], ['Lugar', r.lugar],
       ['Conta', r.conta], ['Para', r.contaDestino], ['Envelope', r.envelope], ['Pagamento de', r.compromisso], ['Quem', r.quem], ['De quem', r.deQuem], ['Quando', quando(r.data)]].filter((l) => l[1]);
     corpo = `<div class="lista" style="background:var(--cartao2)">${linhas.map((l) => `<div class="lista-linha"><span style="color:var(--apagado)">${l[0]}</span><b>${esc(l[1])}</b></div>`).join('')}</div>
-      <p class="sub" style="font-size:13px;line-height:1.5">Errou? Cancele e anote de novo. O registro não some: fica marcado como cancelado na planilha, para dar para ver o que aconteceu.</p>
+      ${r.tipo !== 'sem_gasto' && r.categoria !== 'Ajuste' ? `<button class="principal" style="background:var(--cartao2);color:var(--texto)" data-a="editarReg">Editar</button>` : ''}
+      <p class="sub" style="font-size:13px;line-height:1.5">Editar ou cancelar não apaga nada: o registro antigo fica marcado na planilha, para dar para ver o que aconteceu.</p>
       <button class="principal" style="background:${f.confirmarCancelar ? '#FCA5A5' : 'var(--cartao2)'};color:${f.confirmarCancelar ? 'var(--fundo)' : 'var(--vermelho-txt)'}" data-a="cancelarReg" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Cancelar este registro'}</button>`;
   } else if (f.tipo === 'prevVer') {
     const c = (d.compromissos || []).find((x) => x.nome === f.nome) || {};
@@ -493,8 +497,23 @@ function folhaHtml() {
         <div class="lista-linha"><span style="color:var(--apagado)">Quando</span><b>${quandoPrev(c.proximaData, d.hoje)}</b></div>
         ${c.obs ? `<div class="lista-linha"><span style="color:var(--apagado)">Quem anotou</span><b>${esc(c.obs.replace('Previsto por ', ''))}</b></div>` : ''}</div>
       <button class="principal" style="background:var(--laranja)" data-a="prevGastar">Aconteceu: anotar o gasto</button>
-      <button class="principal" style="background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button>
+      <div style="display:flex;gap:10px">
+        <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="editarPrev">Editar</button>
+        <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button></div>
       <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
+  } else if (f.tipo === 'ajuste') {
+    const real = f.valor === '' ? null : (parseFloat(f.valor.replace(',', '.')) || 0);
+    const dif = real === null ? 0 : real - f.saldoApp;
+    corpo = `<div class="visor"><span class="sub" style="font-size:13px">Quanto tem de verdade agora em</span>
+      <b style="font-size:22px;color:var(--texto)">${esc(f.conta)}</b><b style="color:var(--azul)">R$ ${esc(f.valor || '0')}</b>
+      <span class="sub" style="font-size:12px">O app diz ${brl(f.saldoApp, true)}${real !== null && Math.abs(dif) >= 0.01 ? ` · diferença de ${dif > 0 ? '+' : '−'}${brl(Math.abs(dif), true)}` : ''}</span></div>
+      <div class="teclado">${['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((k) => `<button data-a="tecla" data-v="${k}" aria-label="${k === 'del' ? 'Apagar' : k}">${k === 'del' ? '⌫' : k}</button>`).join('')}</div>
+      <p class="sub" style="font-size:12px;line-height:1.5;margin:0">Olhe no app do banco e digite o saldo. O app anota um <b>ajuste</b> com a diferença: não conta como gasto nem como entrada.</p>
+      <button class="principal" style="background:var(--azul)" data-a="salvarAjuste" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Corrigir'}</button>`;
+  } else if (f.tipo === 'envEditar') {
+    corpo = `<div class="grupo"><label for="ev-meta">Meta (R$)</label><input id="ev-meta" class="campo" inputmode="decimal" placeholder="em branco = soma das contas do envelope" value="${esc(f.meta)}" data-campo="meta"></div>
+      <div class="grupo"><label for="ev-data">Até quando (opcional)</label><input id="ev-data" class="campo" type="date" value="${esc(f.dataAlvo)}" data-campo="dataAlvo"></div>
+      <button class="principal" style="background:var(--azul)" data-a="salvarEnv" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>`;
   } else if (f.tipo === 'fixa') {
     const repete = [['mensal', 'Todo mês'], ['bimestral', 'A cada 2 meses'], ['trimestral', 'A cada 3 meses']];
     const envs = (d.envelopes || []).filter((e) => e.nome !== ENV_PREVISTOS).map((e) => e.nome);
@@ -536,10 +555,10 @@ function folhaHtml() {
     if (f.tipo === 'previsto') {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
-        <div class="grupo"><span>Quando</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
+        <div class="grupo"><span>Quando${f.dataAtual && !f.quando ? ` <small style="color:var(--apagado)">(agora: ${quandoPrev(f.dataAtual, d.hoje)})</small>` : ''}</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
         <div class="grupo"><span>Para quê</span><div class="chips">${catChips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome))}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
-        <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Anotar previsto'}</button>`;
+        <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : f.editandoPrev ? 'Salvar' : 'Anotar previsto'}</button>`;
     } else if (f.tipo === 'entrada' || f.tipo === 'saida') {
       const compromissos = (d.compromissos || []).map((c) => c.nome);
       // Saindo do Mercado Pago sem ser uma conta prevista = mexendo em envelope.
@@ -651,6 +670,7 @@ async function salvarFolha() {
       divisao: [{ envelope: f.envelope, sugerido: valor, real: valor }], obs: 'guardar no envelope' });
     msg = 'Guardado em ' + f.envelope;
   }
+  if (f.substitui) { pedido.substitui = f.substitui; msg = 'Corrigido'; }
   f.salvando = true; render();
   try {
     await api('registrar', pedido);
@@ -749,12 +769,15 @@ const acoes = {
     const f = S.folha;
     const nome = (f.nomePrev || '').trim();
     if (!nome) { avisar('Escreva o que vai ser.', true); return; }
-    if (!f.quando) { avisar('Escolha quando.', true); return; }
+    if (!f.quando && !f.dataAtual) { avisar('Escolha quando.', true); return; }
+    const data = f.quando ? dataDoQuando(f.quando) : f.dataAtual;
+    const valor = parseFloat(f.valor.replace(',', '.')) || 0;
     f.salvando = true; render();
     try {
-      await api('previsto', { nome, valor: parseFloat(f.valor.replace(',', '.')) || 0, data: dataDoQuando(f.quando), quem: eu, categoria: f.cat || 'Outro' });
-      S.folha = null; avisar('Previsto anotado'); await carregar();
-    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+      if (f.editandoPrev) await api('previstoEditar', { nomeAntigo: f.editandoPrev, nome, valor, data, categoria: f.cat || 'Outro' });
+      else await api('previsto', { nome, valor, data, quem: eu, categoria: f.cat || 'Outro' });
+      S.folha = null; avisar(f.editandoPrev ? 'Previsto atualizado' : 'Previsto anotado'); await carregar();
+    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar(e.message === 'ja_existe' ? 'Já existe um com esse nome.' : 'Não salvou. Tente de novo.', true); render(); }
   },
   mandarMP: (v) => {
     const minha = eu === 'Débora' ? 'Inter Débora' : 'Inter Gabriel';
@@ -786,6 +809,57 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  editarPrev: () => {
+    const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome);
+    if (!c) return;
+    S.folha = { tipo: 'previsto', passo: 2, valor: String(c.valor || '').replace('.', ','), nomePrev: c.nome, cat: c.categoria || null,
+      quando: null, dataAtual: c.proximaData || '', editandoPrev: c.nome, erro: '' };
+    render();
+  },
+  editarReg: () => {
+    const r = S.folha.reg;
+    const comum = { valor: String(r.valor).replace('.', ','), conta: r.conta, quem: r.quem || eu, deQuem: r.deQuem || 'Pessoal', substitui: r.id };
+    if (r.tipo === 'saida') abrirFolha('saida', Object.assign(comum, { cat: r.categoria || null, item: r.item || '', lugar: r.lugar || '', compromisso: r.compromisso || null, envelope: r.envelope || null }));
+    else if (r.tipo === 'entrada') abrirFolha('entrada', Object.assign(comum, { cat: r.categoria || null }));
+    else if (r.tipo === 'mover' && r.envelope) abrirFolha('guardar', Object.assign(comum, { envelope: r.envelope }));
+    else abrirFolha('mover', Object.assign(comum, { para: r.contaDestino }));
+    render();
+  },
+  ajustar: (v) => {
+    const c = contasAtivas().find((x) => x.nome === v);
+    if (c) { S.folha = { tipo: 'ajuste', conta: c.nome, saldoApp: c.saldo, valor: '', erro: '' }; render(); }
+  },
+  salvarAjuste: async () => {
+    const f = S.folha;
+    if (f.valor === '') { avisar('Digite o saldo do banco.', true); return; }
+    const real = parseFloat(f.valor.replace(',', '.')) || 0;
+    const dif = Math.round((real - f.saldoApp) * 100) / 100;
+    if (!dif) { S.folha = null; avisar('Já estava certo'); render(); return; }
+    f.salvando = true; render();
+    try {
+      await api('registrar', { tipo: dif > 0 ? 'entrada' : 'saida', valor: Math.abs(dif), categoria: 'Ajuste', conta: f.conta, quem: eu,
+        obs: 'ajuste: app dizia ' + f.saldoApp.toFixed(2) + ', banco dizia ' + real.toFixed(2) });
+      S.folha = null; avisar('Saldo corrigido'); await carregar();
+    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
+  editarEnv: (v) => {
+    const e = (S.dados.envelopes || []).find((x) => x.nome === v);
+    if (!e) return;
+    // Meta que é a soma das contas (sem meta escrita) aparece em branco.
+    const somaContas = (S.dados.compromissos || []).filter((c) => c.envelope === v).reduce((s, c) => s + c.valor, 0);
+    const metaEscrita = e.meta && Math.abs(e.meta - somaContas) > 0.001 ? String(e.meta).replace('.', ',') : '';
+    S.folha = { tipo: 'envEditar', nome: v, meta: metaEscrita, dataAlvo: e.dataAlvo || '' };
+    render();
+  },
+  salvarEnv: async () => {
+    const f = S.folha;
+    f.salvando = true; render();
+    try {
+      const meta = (f.meta || '').trim();
+      await api('envelopeEditar', { nome: f.nome, meta: meta === '' ? '' : parseFloat(meta.replace(/\./g, '').replace(',', '.')) || 0, dataAlvo: f.dataAlvo || '' });
+      S.folha = null; avisar('Envelope atualizado'); await carregar();
+    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
   novaFixa: () => {
     // Vindo do "Saiu": guarda a anotação para voltar a ela depois de criar.
     const anterior = S.folha && S.folha.tipo === 'saida' ? S.folha : null;
