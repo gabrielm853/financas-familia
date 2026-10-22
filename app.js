@@ -9,6 +9,10 @@
 // O endereço da API não é segredo: sem a chave, ela não entrega nada.
 const API = 'https://script.google.com/macros/s/AKfycbxriI1SGh0VkSg8jAwh_gl5umYEVtarFvGeu_QtHJNxAnagOfD40s5FZiMdxDZhmaaQ/exec';
 const LIVRE_MINIMO = 0.15; // na divisão, pelo menos 15% fica livre para o dia a dia
+const CONTA_ENVELOPES = 'Mercado Pago'; // onde mora todo o dinheiro dos envelopes
+const ENV_PREVISTOS = 'Próximos dias';   // envelope dos gastos que já se sabe que vêm
+// Tirar dinheiro de envelope para estas é aceitável; para o resto, o app pergunta duas vezes.
+const ESSENCIAIS = ['Mercado/caderneta', 'Luisa Amélia', 'Contas da casa', 'Dívidas'];
 
 // ---------- Memória do celular (só a chave e preferências) ----------
 // Pode falhar (aba anônima, iPhone que limpou dados): por isso o try/catch.
@@ -120,9 +124,41 @@ function situacaoEnvelope(e, hoje) {
   if (e.dataAlvo && diasAte(e.dataAlvo, hoje) <= 14) return { txt: 'Falta pouco tempo', cls: 'atencao', cor: '#F5A524' };
   return { txt: 'Juntando', cls: 'ok', cor: '#6EE7A0' };
 }
+// O dinheiro "livre" de verdade: o que está nas contas, menos o que já tem
+// destino (envelopes), menos os gastos previstos que ainda não têm dinheiro guardado.
+function contasDoDinheiro() {
+  const d = S.dados;
+  const contas = contasAtivas();
+  const nasContas = contas.filter((c) => c.disponivel).reduce((s, c) => s + c.saldo, 0);
+  const guardado = (d.envelopes || []).reduce((s, e) => s + Math.max(0, e.guardado), 0);
+  const envPrev = (d.envelopes || []).find((e) => e.nome === ENV_PREVISTOS);
+  const prevSemDinheiro = envPrev ? Math.max(0, envPrev.meta - Math.max(0, envPrev.guardado)) : 0;
+  const mp = contas.find((c) => c.nome === CONTA_ENVELOPES);
+  // Quanto do dinheiro de envelope ainda está fora do Mercado Pago.
+  const faltaMandar = mp && mp.temSaldoInicial ? Math.max(0, Math.round(guardado - mp.saldo)) : 0;
+  return { nasContas, guardado, prevSemDinheiro, livre: nasContas - guardado - prevSemDinheiro, faltaMandar };
+}
+const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
+function previstos() {
+  return (S.dados.compromissos || []).filter(ehPrevisto).sort((a, b) => (a.proximaData || '9').localeCompare(b.proximaData || '9'));
+}
+function quandoPrev(iso, hoje) {
+  if (!iso) return 'sem data';
+  const n = diasAte(iso, hoje);
+  return n < 0 ? 'passou de ' + diaMes(iso) : n === 0 ? 'hoje' : n === 1 ? 'amanhã' : 'em ' + n + ' dias · ' + diaMes(iso);
+}
+// "Hoje", "Amanhã"... vira uma data. Meio-dia evita erro de fuso.
+function dataDoQuando(q) {
+  const d = new Date(S.dados.hoje + 'T12:00:00');
+  if (q === 'Amanhã') d.setDate(d.getDate() + 1);
+  else if (q === 'Esta semana') d.setDate(d.getDate() + 6);
+  else if (q === 'Este mês') { d.setMonth(d.getMonth() + 1, 0); }
+  return d.toISOString().slice(0, 10);
+}
+
 function vencimentosOrdenados() {
   const d = S.dados;
-  return (d.compromissos || []).slice().sort((a, b) => {
+  return (d.compromissos || []).filter((c) => !ehPrevisto(c)).sort((a, b) => {
     const pa = a.situacao === 'atrasado' ? 0 : (a.proximaData ? 1 : 2);
     const pb = b.situacao === 'atrasado' ? 0 : (b.proximaData ? 1 : 2);
     if (pa !== pb) return pa - pb;
@@ -161,8 +197,9 @@ function telaEntrar() {
 function telaInicio() {
   const d = S.dados, hoje = d.hoje;
   const contas = contasAtivas();
-  const disponivel = contas.filter((c) => c.disponivel).reduce((s, c) => s + c.saldo, 0);
+  const din = contasDoDinheiro();
   const total = contas.reduce((s, c) => s + c.saldo, 0);
+  const prevs = previstos();
   const semInicial = contas.filter((c) => !c.temSaldoInicial).map((c) => c.nome);
   const nomeMes = MESES_LONGOS[Number(hoje.slice(5, 7)) - 1];
 
@@ -225,12 +262,14 @@ function telaInicio() {
   </header>
 
   <section class="saldo">
-    <div class="saldo-linha"><span class="sub">Disponível agora</span>
+    <div class="saldo-linha"><span class="sub">Livre para gastar</span>
       <button class="btn-icone" style="margin:-12px 0" data-a="ocultar" aria-label="Mostrar ou esconder valores">${IC.olho}</button></div>
-    <span class="saldo-valor">${priv(brl(disponivel, true))}</span>
+    <span class="saldo-valor" style="${din.livre < 0 ? 'color:var(--vermelho-txt)' : ''}">${priv(brl(din.livre, true))}</span>
+    ${din.guardado || din.prevSemDinheiro ? `<span class="sub" style="font-size:12px;line-height:1.5">Já descontado: ${priv(brl(din.guardado))} nos envelopes${din.prevSemDinheiro ? ` e ${priv(brl(din.prevSemDinheiro))} de gastos previstos ainda sem dinheiro guardado` : ''}.</span>` : ''}
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
     ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))}</b></div>`).join('')}</div>` : ''}
   </section>
+  ${din.faltaMandar > 1 ? `<button class="faixa-alerta" style="text-align:left;width:100%;border-color:var(--azul);color:var(--azul-txt)" data-a="mandarMP" data-v="${din.faltaMandar}">Falta mandar <b>${priv(brl(din.faltaMandar))}</b> para o ${CONTA_ENVELOPES}: é dinheiro de envelope que ainda está no Inter. <b style="color:var(--texto)">Já mandei →</b></button>` : ''}
   ${semInicial.length ? `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="saldoIni">Falta dizer quanto tem em: <b>${semInicial.map(esc).join(', ')}</b>. Sem isso o saldo começa do zero. <b style="color:var(--texto)">Toque para preencher →</b></button>` : ''}
 
   <section class="acoes">
@@ -239,6 +278,13 @@ function telaInicio() {
     <button class="acao mover" data-a="nova" data-v="mover"><span>${IC.mover}</span>Mover</button>
   </section>
   ${faixa}
+
+  <section style="display:flex;flex-direction:column;gap:8px">
+    <div class="secao"><h2>Vai ter gasto</h2><button class="link" data-a="nova" data-v="previsto">+ Adicionar</button></div>
+    ${prevs.length ? `<div class="lista">${prevs.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer" data-a="verPrev" data-v="${esc(c.nome)}">
+      <span style="display:flex;flex-direction:column"><b style="font-weight:600">${esc(c.nome)}</b><small style="color:var(--apagado)">${quandoPrev(c.proximaData, hoje)}</small></span><b>${priv(brl(c.valor))}</b></button>`).join('')}</div>`
+      : '<p class="vazio">Lembrou de um gasto que vem aí (cabelo, compra na cidade)? Anote aqui: a divisão passa a guardar dinheiro para ele.</p>'}
+  </section>
 
   <section class="cartao dicas">
     <div class="secao"><span class="rotulo" style="color:${dica.c}">${dica.r}</span>
@@ -294,6 +340,7 @@ function telaEnvelopes() {
         ${e.sugeridoTotal || e.realTotal ? `<div class="par"><span>Já dividido: sugerido × real</span><b>${brl(e.sugeridoTotal)} × ${brl(e.realTotal)} ${dif ? `<span class="etiqueta ${dif < 0 ? 'atencao' : 'info'}">${dif < 0 ? '−' : '+'}${brl(Math.abs(dif))}</span>` : ''}</b></div>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
+        ${e.guardado > 0 ? `<button class="link cinza" style="align-self:center" data-a="tirarEnv" data-v="${esc(e.nome)}">Tirar dinheiro daqui</button>` : ''}
       </div>` : ''}
     </div>`;
   }).join('')}
@@ -365,8 +412,9 @@ function folhaHtml() {
   const f = S.folha;
   if (!f) return '';
   const d = S.dados;
-  const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)' }[f.tipo] || 'var(--verde)';
-  const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida' };
+  const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)' }[f.tipo] || 'var(--verde)';
+  const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
+    previsto: 'Vai ter gasto', prevVer: f.nome || '', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -386,8 +434,23 @@ function folhaHtml() {
     corpo = `<div class="lista" style="background:var(--cartao2)">${linhas.map((l) => `<div class="lista-linha"><span style="color:var(--apagado)">${l[0]}</span><b>${esc(l[1])}</b></div>`).join('')}</div>
       <p class="sub" style="font-size:13px;line-height:1.5">Errou? Cancele e anote de novo. O registro não some: fica marcado como cancelado na planilha, para dar para ver o que aconteceu.</p>
       <button class="principal" style="background:${f.confirmarCancelar ? '#FCA5A5' : 'var(--cartao2)'};color:${f.confirmarCancelar ? 'var(--fundo)' : 'var(--vermelho-txt)'}" data-a="cancelarReg" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Cancelar este registro'}</button>`;
+  } else if (f.tipo === 'prevVer') {
+    const c = (d.compromissos || []).find((x) => x.nome === f.nome) || {};
+    corpo = `<div class="lista" style="background:var(--cartao2)">
+        <div class="lista-linha"><span style="color:var(--apagado)">Valor previsto</span><b>${brl(c.valor, true)}</b></div>
+        <div class="lista-linha"><span style="color:var(--apagado)">Quando</span><b>${quandoPrev(c.proximaData, d.hoje)}</b></div>
+        ${c.obs ? `<div class="lista-linha"><span style="color:var(--apagado)">Quem anotou</span><b>${esc(c.obs.replace('Previsto por ', ''))}</b></div>` : ''}</div>
+      <button class="principal" style="background:var(--laranja)" data-a="prevGastar">Aconteceu: anotar o gasto</button>
+      <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
+  } else if (f.tipo === 'mandarMP') {
+    corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">${brl(f.valorNum, true)}</b>
+      <p class="sub" style="font-size:14px;line-height:1.55;margin:0">Esse é o dinheiro que acabou de ganhar destino nos envelopes. Faça a transferência no app do banco: <b style="color:var(--texto)">${esc(f.conta)} → ${CONTA_ENVELOPES}</b>.
+      Assim ele sai da vista e para de parecer dinheiro para gastar.</p>
+      <div class="grupo"><span>Sai de qual conta</span><div class="chips">${chips(nomesContas.filter((n) => n !== CONTA_ENVELOPES), 'conta', f.conta)}</div></div>
+      <button class="principal" style="background:${cor}" data-a="jaMandei" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Já mandei, anotar'}</button>
+      <button class="link cinza" style="align-self:center" data-a="fechar">Mando depois (fica um lembrete no início)</button>`;
   } else if (f.passo === 1) {
-    corpo = `<div class="visor"><span class="sub" style="font-size:13px">Quanto?</span><b style="color:${cor}">R$ ${esc(f.valor || '0')}</b>
+    corpo = `<div class="visor"><span class="sub" style="font-size:13px">${f.tipo === 'previsto' ? 'Quanto mais ou menos?' : 'Quanto?'}</span><b style="color:${cor}">R$ ${esc(f.valor || '0')}</b>
       ${f.erro ? `<span style="font-size:12px;color:var(--vermelho-txt);font-weight:600">${esc(f.erro)}</span>` : ''}</div>
       <div class="teclado">${['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((k) => `<button data-a="tecla" data-v="${k}" aria-label="${k === 'del' ? 'Apagar' : k}">${k === 'del' ? '⌫' : k}</button>`).join('')}</div>
       <button class="principal" style="background:${cor}" data-a="continuar">Continuar</button>`;
@@ -399,16 +462,46 @@ function folhaHtml() {
     const quemDeQuem = `<div style="display:flex;flex-wrap:wrap;gap:16px">
         <div class="grupo"><span>Quem</span><div class="chips">${chips(['Gabriel', 'Débora'], 'quem', f.quem)}</div></div>
         ${f.tipo === 'mover' || f.tipo === 'guardar' ? '' : `<div class="grupo"><span>De quem é</span><div class="chips">${chips(['Pessoal', 'Automy'], 'deQuem', f.deQuem)}</div></div>`}</div>`;
-    if (f.tipo === 'entrada' || f.tipo === 'saida') {
+    if (f.tipo === 'previsto') {
+      corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
+        <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
+        <div class="grupo"><span>Quando</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
+        <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
+        <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Anotar previsto'}</button>`;
+    } else if (f.tipo === 'entrada' || f.tipo === 'saida') {
       const compromissos = (d.compromissos || []).map((c) => c.nome);
+      // Saindo do Mercado Pago sem ser uma conta prevista = mexendo em envelope.
+      const doEnvelope = f.tipo === 'saida' && f.conta === CONTA_ENVELOPES && !f.compromisso;
+      const envs = (d.envelopes || []).filter((e) => e.guardado > 0);
+      let alertaEnv = '';
+      if (doEnvelope) {
+        const e = envs.find((x) => x.nome === f.envelope);
+        const fica = e ? e.guardado - valorNum : 0;
+        const essencial = ESSENCIAIS.indexOf(f.cat) >= 0;
+        const texto = !f.cat ? 'Escolha com o quê, para o app pesar se vale tirar.'
+          : !e ? 'Escolha de qual envelope sai.'
+          : essencial ? `${esc(f.cat)} é essencial: tudo bem usar. ${esc(e.nome)} fica com ${brl(Math.max(0, fica))}${e.meta ? ' de ' + brl(e.meta) : ''}.`
+          : `<b>Pare um segundo.</b> Esse dinheiro tem destino: ${esc(e.nome)}${e.dataAlvo ? ' (até ' + diaMes(e.dataAlvo) + ')' : ''}. ${esc(f.cat)} não é essencial. Tirando ${brl(valorNum)}, ${fica < 0 ? 'não cobre e' : ''} o envelope fica com ${brl(Math.max(0, fica))}${e.meta ? ' de ' + brl(e.meta) : ''}${e.meta && fica < e.meta ? `, e vai faltar ${brl(e.meta - Math.max(0, fica))}` : ''}. Dá para esperar?`;
+        alertaEnv = `<div class="grupo"><span>Sai de qual envelope</span><div class="chips">${chips(envs.map((x) => x.nome), 'envelope', f.envelope)}</div></div>
+          <p class="faixa-alerta" style="margin:0;${essencial && e ? 'border-color:var(--verde);color:var(--verde)' : ''}">${texto}</p>`;
+      }
+      // Antes de mexer em envelope: alguém da casa tem dinheiro livre no Inter?
+      if (doEnvelope) {
+        const outras = contasAtivas().filter((c) => c.disponivel && c.nome !== CONTA_ENVELOPES && c.saldo > 0);
+        if (outras.length) alertaEnv = `<div class="faixa-alerta" style="margin:0;border-color:var(--azul);color:var(--azul-txt);display:flex;flex-direction:column;gap:8px">
+          <span><b>Antes do envelope:</b> ${outras.map((c) => `${esc(c.nome)} tem ${brl(c.saldo, true)}`).join(', ')}. Dá para um mandar para o outro e o envelope fica inteiro.</span>
+          <button class="chip on" style="align-self:flex-start" data-a="nova" data-v="mover">Mover entre vocês</button></div>` + alertaEnv;
+      }
+      const precisaConfirmar = doEnvelope && f.cat && ESSENCIAIS.indexOf(f.cat) < 0;
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${chips(cats, 'cat', f.cat)}${novaCat}</div></div>
         ${f.tipo === 'saida' ? `<div class="grupo"><label for="campo-item">O que exatamente (opcional)</label><input id="campo-item" class="campo" placeholder="ex.: fralda pacote G" value="${esc(f.item)}" data-campo="item"></div>
         <div class="grupo"><label for="campo-lugar">Onde comprou (para comparar preço)</label><input id="campo-lugar" class="campo" placeholder="ex.: mercadinho Y" value="${esc(f.lugar)}" data-campo="lugar"></div>` : ''}
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'Caiu em qual conta' : 'Saiu de qual conta'}</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
-        ${f.tipo === 'saida' && compromissos.length ? `<div class="grupo"><span>É pagamento de uma conta? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}</div></div>` : ''}
+        ${alertaEnv}
+        ${f.tipo === 'saida' && compromissos.length ? `<div class="grupo"><span>É uma conta ou um gasto previsto? (opcional)</span><div class="chips">${chips(compromissos, 'compromisso', f.compromisso)}</div></div>` : ''}
         ${quemDeQuem}
-        <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : 'Anotar saída')}</button>`;
+        <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : precisaConfirmar ? (f.confirmarTirar ? 'Sim, é importante: tirar' : 'Tirar do envelope') : 'Anotar saída')}</button>`;
     } else if (f.tipo === 'mover') {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><span>De onde sai</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
@@ -418,9 +511,10 @@ function folhaHtml() {
         <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Movendo…' : 'Mover'}</button>`;
     } else if (f.tipo === 'guardar') {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
-        <div class="grupo"><span>Esse dinheiro está em qual conta?</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
+        <div class="grupo"><span>Esse dinheiro está em qual conta agora?</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
         ${quemDeQuem}
-        <p class="sub" style="font-size:13px;line-height:1.5">O dinheiro continua na conta; ele só passa a ter destino: ${esc(f.envelope)}.</p>
+        <p class="sub" style="font-size:13px;line-height:1.5">${f.conta === CONTA_ENVELOPES ? `Já está no ${CONTA_ENVELOPES}: ele só passa a ter destino, ${esc(f.envelope)}.`
+          : `Faça a transferência no banco: <b style="color:var(--texto)">${esc(f.conta)} → ${CONTA_ENVELOPES}</b>. O app anota as duas coisas: a mudança de conta e o destino, ${esc(f.envelope)}.`}</p>
         <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Guardando…' : 'Guardar'}</button>`;
     }
   } else if (f.passo === 3) {
@@ -432,10 +526,10 @@ function folhaHtml() {
       ${f.div.map((l, i) => {
         const dif = l.real - l.sugerido;
         return `<div class="linha-div"><span class="cresce"><b>${esc(l.envelope)}</b><small>sugerido ${brl(l.sugerido)} ${dif ? `<span class="etiqueta ${dif < 0 ? 'atencao' : 'info'}" style="margin-left:4px">${dif < 0 ? '−' : '+'}${brl(Math.abs(dif))}</span>` : ''}</small></span>
-          <button class="passo" data-a="div" data-v="${i}|-10" aria-label="Diminuir ${esc(l.envelope)}">−</button><span class="real">${brl(l.real)}</span>
+          <button class="passo" data-a="div" data-v="${i}|-10" aria-label="Diminuir ${esc(l.envelope)}">−</button><input class="real" type="text" inputmode="decimal" aria-label="Valor para ${esc(l.envelope)}" value="${String(l.real).replace('.', ',')}" data-div="${i}">
           <button class="passo" data-a="div" data-v="${i}|10" aria-label="Aumentar ${esc(l.envelope)}">+</button></div>`;
       }).join('')}
-      <div class="secao"><span class="cresce"><b>Livre para gastar</b><small>sugerido ${brl(sugLivre)}</small></span><b style="font-size:22px;color:var(--verde)">${brl(livre)}</b></div>
+      <div class="secao"><span class="cresce"><b>Livre para gastar</b><small>sugerido ${brl(sugLivre)}</small></span><b id="livre-div" style="font-size:22px;color:var(--verde)">${brl(livre)}</b></div>
       <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Confirmar divisão'}</button>`;
   }
 
@@ -460,9 +554,18 @@ async function salvarFolha() {
   const base = { valor, quem: f.quem, deQuem: f.deQuem, conta: f.conta };
   let pedido, msg;
   if (f.tipo === 'saida') {
-    pedido = Object.assign(base, { tipo: 'saida', categoria: f.cat || 'Outro', item: f.item, lugar: f.lugar, compromisso: f.compromisso || '' });
-    msg = f.compromisso ? f.compromisso + ': pago e anotado' : 'Anotado';
+    const doEnvelope = f.conta === CONTA_ENVELOPES && !f.compromisso;
+    if (doEnvelope) {
+      if (!f.cat) { avisar('Escolha com o quê.', true); return; }
+      if (!f.envelope) { avisar('Escolha de qual envelope sai.', true); return; }
+      // Não essencial: o primeiro toque só mostra o aviso; o segundo confirma.
+      if (ESSENCIAIS.indexOf(f.cat) < 0 && !f.confirmarTirar) { f.confirmarTirar = true; render(); return; }
+    }
+    pedido = Object.assign(base, { tipo: 'saida', categoria: f.cat || 'Outro', item: f.item, lugar: f.lugar, compromisso: f.compromisso || '',
+      envelope: doEnvelope ? f.envelope : '', obs: doEnvelope ? 'tirado do envelope ' + f.envelope : '' });
+    msg = f.compromisso ? f.compromisso + ': pago e anotado' : doEnvelope ? 'Anotado. Saiu de ' + f.envelope : 'Anotado';
   } else if (f.tipo === 'entrada') {
+    if (f.div.reduce((s, l) => s + l.real, 0) > valor + 0.001) { avisar('A divisão passou do valor que entrou.', true); return; }
     pedido = Object.assign(base, { tipo: 'entrada', categoria: f.cat || 'Outro', divisao: f.div });
     const marco = f.div.find((l) => l.real < l.sugerido);
     msg = marco ? `Dividido. ${marco.envelope} ficou ${brl(marco.sugerido - marco.real)} abaixo do sugerido` : 'Dividido como o sugerido';
@@ -471,7 +574,7 @@ async function salvarFolha() {
     pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.para, deQuem: 'Pessoal' });
     msg = 'Movido. Não conta como gasto';
   } else if (f.tipo === 'guardar') {
-    pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.conta, envelope: f.envelope, deQuem: 'Pessoal',
+    pedido = Object.assign(base, { tipo: 'mover', contaDestino: CONTA_ENVELOPES, envelope: f.envelope, deQuem: 'Pessoal',
       divisao: [{ envelope: f.envelope, sugerido: valor, real: valor }], obs: 'guardar no envelope' });
     msg = 'Guardado em ' + f.envelope;
   }
@@ -479,6 +582,11 @@ async function salvarFolha() {
   try {
     await api('registrar', pedido);
     S.folha = null;
+    // Dividiu dinheiro que caiu fora do Mercado Pago: já pede para mandar.
+    const paraMandar = f.tipo === 'entrada' ? f.div.reduce((s, l) => s + l.real, 0) : 0;
+    if (paraMandar > 0 && f.conta !== CONTA_ENVELOPES && contasAtivas().some((c) => c.nome === CONTA_ENVELOPES)) {
+      S.folha = { tipo: 'mandarMP', valorNum: paraMandar, conta: f.conta, quem: f.quem };
+    }
     avisar(msg);
     S.tab = 'inicio';
     await carregar();
@@ -541,6 +649,43 @@ const acoes = {
   cat: (v) => { S.catSel = S.catSel === v ? null : v; render(); },
   nova: (v) => { abrirFolha(v); render(); },
   guardar: (v) => { abrirFolha('guardar', { envelope: v }); render(); },
+  tirarEnv: (v) => { abrirFolha('saida', { conta: CONTA_ENVELOPES, envelope: v }); render(); },
+  verPrev: (v) => { S.folha = { tipo: 'prevVer', nome: v }; render(); },
+  prevGastar: () => {
+    const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
+    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome });
+    render();
+  },
+  prevCancelar: async () => {
+    const f = S.folha;
+    if (!f.confirmarCancelar) { f.confirmarCancelar = true; render(); return; }
+    f.salvando = true; render();
+    try { await api('previstoCancelar', { nome: f.nome }); S.folha = null; avisar('Tirado da lista'); carregar(); }
+    catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
+  salvarPrev: async () => {
+    const f = S.folha;
+    const nome = (f.nomePrev || '').trim();
+    if (!nome) { avisar('Escreva o que vai ser.', true); return; }
+    if (!f.quando) { avisar('Escolha quando.', true); return; }
+    f.salvando = true; render();
+    try {
+      await api('previsto', { nome, valor: parseFloat(f.valor.replace(',', '.')) || 0, data: dataDoQuando(f.quando), quem: eu });
+      S.folha = null; avisar('Previsto anotado'); await carregar();
+    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
+  mandarMP: (v) => {
+    const minha = eu === 'Débora' ? 'Inter Débora' : 'Inter Gabriel';
+    S.folha = { tipo: 'mandarMP', valorNum: Number(v) || 0, conta: minha, quem: eu }; render();
+  },
+  jaMandei: async () => {
+    const f = S.folha;
+    f.salvando = true; render();
+    try {
+      await api('registrar', { tipo: 'mover', valor: f.valorNum, conta: f.conta, contaDestino: CONTA_ENVELOPES, quem: f.quem || eu, deQuem: 'Pessoal', obs: 'dinheiro dos envelopes' });
+      S.folha = null; avisar('Anotado. Dinheiro dos envelopes no ' + CONTA_ENVELOPES); await carregar();
+    } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
   fechar: () => { S.folha = null; render(); },
   voltar: () => { S.folha.passo--; render(); },
@@ -557,7 +702,7 @@ const acoes = {
     if (!(parseFloat((f.valor || '0').replace(',', '.')) > 0)) { f.erro = 'Digite um valor maior que zero.'; render(); return; }
     f.passo = 2; render();
   },
-  campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; render(); },
+  campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
   salvarCat: async () => {
     const f = S.folha, nome = (f.novaCat || '').trim();
@@ -630,6 +775,18 @@ document.addEventListener('click', (e) => {
   const fn = acoes[alvo.dataset.a];
   if (fn) fn(alvo.dataset.v, alvo);
 });
+// Valor digitado na divisão: atualiza o "livre" na hora, sem redesenhar
+// (redesenhar fecharia o teclado). Ao sair do campo, aí sim redesenha.
+document.addEventListener('input', (e) => {
+  const i = e.target.dataset && e.target.dataset.div;
+  if (i === undefined || !S.folha || !S.folha.div) return;
+  const f = S.folha;
+  f.div[i].real = Math.max(0, parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0);
+  const total = parseFloat((f.valor || '0').replace(',', '.')) || 0;
+  const el = document.getElementById('livre-div');
+  if (el) el.textContent = brl(Math.max(0, total - f.div.reduce((s, l) => s + l.real, 0)));
+});
+document.addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.div !== undefined) render(); });
 // Campos de texto: guardam na folha sem redesenhar (senão o teclado do celular fecha a cada letra).
 document.addEventListener('input', (e) => {
   const campo = e.target.dataset && e.target.dataset.campo;

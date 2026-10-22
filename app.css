@@ -157,7 +157,8 @@ input { font-family: inherit; }
 .campo:focus { border-color: var(--azul); }
 .linha-div { background: var(--cartao2); border-radius: 18px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 8px; }
 .linha-div .passo { flex: 0 0 44px; height: 44px; border-radius: 14px; background: var(--trilho); font-size: 22px; font-weight: 700; }
-.linha-div .real { min-width: 66px; text-align: center; font-size: 16px; font-weight: 800; }
+.linha-div .real { width: 76px; text-align: center; font-size: 16px; font-weight: 800; background: var(--cartao2); color: var(--texto); border: 1px solid transparent; border-radius: 10px; padding: 8px 4px; font-family: inherit; }
+.linha-div .real:focus { outline: none; border-color: var(--verde); }
 
 .toast { position: fixed; top: calc(18px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 999px; background: var(--texto); color: var(--fundo); font-size: 14px; font-weight: 700; max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 20; animation: aparecer .25s ease-out; }
 .toast.erro { background: #FCA5A5; }
