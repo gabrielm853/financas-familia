@@ -1,7 +1,7 @@
 // Service worker: guarda as telas no celular para o app abrir na hora.
 // Os NÚMEROS nunca passam por aqui (a API é outro endereço e não é guardada).
 // Mudou algum arquivo do app? Aumente a VERSAO, senão o celular segue com o antigo.
-const VERSAO = 'financas-v10';
+const VERSAO = 'financas-v11';
 const ARQUIVOS = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -18,7 +18,9 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((r) => {
+    // "no-cache": sempre pergunta ao servidor se mudou (o GitHub manda o navegador
+    // guardar por 10 min, e aí a versão nova demorava a aparecer).
+    fetch(e.request.url, { cache: 'no-cache' }).then((r) => {
       const copia = r.clone();
       caches.open(VERSAO).then((c) => c.put(e.request, copia));
       return r;
