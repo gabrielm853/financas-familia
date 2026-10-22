@@ -243,7 +243,7 @@ function sugerirDivisao(valor) {
   return (S.dados.envelopes || []).map((e) => {
     const falta = Math.max(0, e.meta - e.guardado);
     let v = e.meta ? Math.min(falta, resto) : 0;
-    v = Math.max(0, Math.floor(v));
+    v = Math.max(0, Math.floor(v * 100) / 100);
     resto -= v;
     return { envelope: e.nome, sugerido: v, real: v };
   }).filter((l) => l.sugerido > 0 || (S.dados.envelopes.find((e) => e.nome === l.envelope) || {}).meta);
