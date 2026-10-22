@@ -221,6 +221,19 @@ function cartaoPassou(hoje) {
       <button class="chip" data-a="prevAdiar" data-v="${esc(c.nome)}">Ficou para amanhã</button>
     </div></section>`;
 }
+// Depois da meia-noite, "amanhã" engana: quem ainda não dormiu pensa no dia de
+// ontem. Entre 0h e 5h, oferece passar os previstos de amanhã para hoje.
+const madrugada = () => new Date().getHours() < 5;
+function cartaoMadrugada(hoje) {
+  if (!madrugada()) return '';
+  const amanha = dataDoQuando('Amanhã');
+  const lista = previstos().filter((c) => c.proximaData === amanha);
+  if (!lista.length) return '';
+  return `<section class="cartao" style="display:flex;flex-direction:column;gap:10px;border:1px solid var(--azul)">
+    <span class="rotulo" style="color:var(--azul-txt)">Já passou da meia-noite</span>
+    <span style="font-size:14px;line-height:1.5">Hoje já é <b>${diaMes(hoje)}</b>. ${lista.length === 1 ? 'Este previsto está' : 'Estes ' + lista.length + ' previstos estão'} para amanhã (${diaMes(amanha)}): ${lista.map((c) => esc(c.nome)).join(', ')}. Era para hoje?</span>
+    <button class="chip on" style="align-self:flex-start" data-a="passarParaHoje">Sim, passar para hoje</button></section>`;
+}
 function quandoPrev(iso, hoje) {
   if (!iso) return 'sem data';
   const n = diasAte(iso, hoje);
@@ -352,6 +365,7 @@ function telaInicio() {
       <button class="principal" style="background:var(--azul);margin:10px 0 8px;font-size:14px;min-height:46px" data-a="acertar">Acertar tudo com o banco</button></div>` : ''}
   </section>
   ${cartaoPassou(hoje)}
+  ${cartaoMadrugada(hoje)}
   ${din.excesso > 0.009 ? (() => {
     const pl = planoTirar(din.excesso);
     return `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="reequilibrar">Os envelopes estão com <b>${priv(brl(din.excesso, true))}</b> a mais do que existe nas contas: algum gasto saiu sem descontar de envelope.
@@ -627,6 +641,7 @@ function folhaHtml() {
     if (f.tipo === 'previsto') {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
+        ${madrugada() ? `<p class="nota" style="margin:0;color:var(--azul-txt)">Já passou da meia-noite: "Hoje" é ${diaMes(d.hoje)}, "Amanhã" é ${diaMes(dataDoQuando('Amanhã'))}.</p>` : ''}
         <div class="grupo"><span>Quando${f.dataAtual && !f.quando ? ` <small style="color:var(--apagado)">(agora: ${quandoPrev(f.dataAtual, d.hoje)})</small>` : ''}</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
         <div class="grupo"><span>Para quê</span><div class="chips">${catChips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome))}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
@@ -840,6 +855,14 @@ const acoes = {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
     abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null });
     render();
+  },
+  passarParaHoje: async () => {
+    const amanha = dataDoQuando('Amanhã');
+    const lista = previstos().filter((c) => c.proximaData === amanha);
+    try {
+      for (const c of lista) await api('previstoAdiar', { nome: c.nome, data: S.dados.hoje });
+      avisar(lista.length + (lista.length === 1 ? ' previsto passou' : ' previstos passaram') + ' para hoje'); await carregar();
+    } catch (e) { if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); carregar(); }
   },
   verPrevGastar: (v) => { S.folha = { tipo: 'prevVer', nome: v }; acoes.prevGastar(); },
   prevNao: async (v) => {
