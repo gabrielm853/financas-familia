@@ -158,6 +158,18 @@ function passaDoLivre(f, valorNum) {
   return Object.assign({ livre, falta }, planoTirar(falta));
 }
 
+// "1.234,56" → 1234.56
+const numBR = (t) => parseFloat(String(t || '').replace(/\./g, '').replace(',', '.')) || 0;
+const txtBR = (n) => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',');
+// Na tela de acerto: o livre que vai sobrar com os números digitados.
+function resumoAcerto(f) {
+  const disp = contasAtivas().filter((c) => c.disponivel).map((c) => c.nome);
+  const contas = disp.reduce((s, n) => s + numBR(f.contas[n]), 0);
+  const envs = Object.keys(f.envs).reduce((s, n) => s + numBR(f.envs[n]), 0);
+  const livre = contas - envs;
+  return livre < 0 ? `<span style="color:var(--vermelho-txt)">passa ${brl(-livre, true)}</span>` : `<span style="color:var(--verde)">${brl(livre, true)}</span>`;
+}
+
 // De onde tirar quando falta: do envelope MENOS urgente para o mais urgente.
 // "Próximos dias" é prioridade 1, então é sempre o último.
 function planoTirar(falta) {
@@ -326,13 +338,15 @@ function telaInicio() {
     ${din.guardado ? `<span class="sub" style="font-size:12px;line-height:1.5">Já descontado: ${priv(brl(din.guardado))} nos envelopes${din.prevSemDinheiro - din.faltaPrev > 0 ? ` e ${priv(brl(din.prevSemDinheiro - din.faltaPrev))} de gastos previstos` : ''}.</span>` : ''}
     ${din.faltaPrev > 0 ? `<span class="sub" style="font-size:12px;color:var(--laranja-txt)">Faltam ${priv(brl(din.faltaPrev))} para cobrir os gastos previstos.</span>` : ''}
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
-    ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;border-top:1px solid rgba(255,255,255,.06);color:inherit;font:inherit;cursor:pointer" data-a="ajustar" data-v="${esc(c.nome)}"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))} <small style="color:var(--azul-txt);font-weight:600">editar</small></b></button>`).join('')}</div>` : ''}
+    ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;border-top:1px solid rgba(255,255,255,.06);color:inherit;font:inherit;cursor:pointer" data-a="ajustar" data-v="${esc(c.nome)}"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))} <small style="color:var(--azul-txt);font-weight:600">editar</small></b></button>`).join('')}
+      <button class="principal" style="background:var(--azul);margin:10px 0 8px;font-size:14px;min-height:46px" data-a="acertar">Acertar tudo com o banco</button></div>` : ''}
   </section>
   ${cartaoPassou(hoje)}
   ${din.excesso > 0.009 ? (() => {
     const pl = planoTirar(din.excesso);
     return `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="reequilibrar">Os envelopes estão com <b>${priv(brl(din.excesso, true))}</b> a mais do que existe nas contas: algum gasto saiu sem descontar de envelope.
-      Vai sair de <b>${pl.plano.map((t) => esc(t.envelope) + ' (' + brl(t.valor, true) + ')').join(', ')}</b>. <b style="color:var(--texto)">Toque para acertar →</b></button>`;
+      Vai sair de <b>${pl.plano.map((t) => esc(t.envelope) + ' (' + brl(t.valor, true) + ')').join(', ')}</b>. <b style="color:var(--texto)">Toque para acertar →</b></button>
+      <button class="link" style="align-self:flex-start" data-a="acertar">Prefiro acertar tudo com o banco de uma vez</button>`;
   })() : ''}
   ${din.faltaMandar > 1 ? `<button class="faixa-alerta" style="text-align:left;width:100%;border-color:var(--azul);color:var(--azul-txt)" data-a="mandarMP" data-v="${din.faltaMandar}">Falta mandar <b>${priv(brl(din.faltaMandar))}</b> para o ${CONTA_ENVELOPES}: é dinheiro de envelope que ainda está no Inter. <b style="color:var(--texto)">Já mandei →</b></button>` : ''}
   ${semInicial.length ? `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="saldoIni">Falta dizer quanto tem em: <b>${semInicial.map(esc).join(', ')}</b>. Sem isso o saldo começa do zero. <b style="color:var(--texto)">Toque para preencher →</b></button>` : ''}
@@ -506,7 +520,7 @@ function folhaHtml() {
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', mandarMP: 'var(--azul)', ajuste: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
     previsto: f.editandoPrev ? 'Editar previsto' : 'Vai ter gasto', prevVer: f.nome || '',
-    ajuste: 'Corrigir saldo', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    ajuste: 'Corrigir saldo', acertar: 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -538,6 +552,16 @@ function folhaHtml() {
         <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="editarPrev">Editar</button>
         <button class="principal" style="flex:1;background:var(--cartao2);color:var(--texto)" data-a="prevAdiar" data-v="${esc(f.nome)}">Ficou para amanhã</button></div>
       <button class="principal" style="background:var(--cartao2);color:${f.confirmarCancelar ? 'var(--vermelho-txt)' : 'var(--texto2)'}" data-a="prevCancelar" ${f.salvando ? 'disabled' : ''}>${f.confirmarCancelar ? 'Toque de novo para confirmar' : 'Não vai mais acontecer'}</button>`;
+  } else if (f.tipo === 'acertar') {
+    const campo = (tipo, nome, valor) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(nome)}</span>
+      <input class="campo" style="width:120px;text-align:right;padding:8px 10px;min-height:0" inputmode="decimal" value="${esc(valor)}" data-acerto="${tipo}|${esc(nome)}"></div>`;
+    corpo = `<p class="sub" style="font-size:13px;line-height:1.5;margin:0">Já vem com o que o app sabe. Corrija só o que estiver diferente e toque em Salvar.</p>
+      <span class="rotulo">1. Quanto tem em cada conta (olhe no banco)</span>
+      <div class="lista" style="background:var(--cartao2)">${Object.keys(f.contas).map((n) => campo('conta', n, f.contas[n])).join('')}</div>
+      <span class="rotulo">2. Quanto fica em cada envelope</span>
+      <div class="lista" style="background:var(--cartao2)">${Object.keys(f.envs).map((n) => campo('env', n, f.envs[n])).join('')}</div>
+      <div class="secao"><span class="cresce"><b>Livre para gastar</b><small>contas − envelopes</small></span><b id="acerto-livre" style="font-size:22px">${resumoAcerto(f)}</b></div>
+      <button class="principal" style="background:var(--azul)" data-a="salvarAcerto" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>`;
   } else if (f.tipo === 'ajuste') {
     const real = f.valor === '' ? null : (parseFloat(f.valor.replace(',', '.')) || 0);
     const dif = real === null ? 0 : real - f.saldoApp;
@@ -866,6 +890,27 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  acertar: () => {
+    const contas = {}, envs = {};
+    contasAtivas().forEach((c) => { contas[c.nome] = txtBR(c.saldo); });
+    (S.dados.envelopes || []).forEach((e) => { envs[e.nome] = txtBR(Math.max(0, e.guardado)); });
+    S.folha = { tipo: 'acertar', contas, envs, inicio: { contas: Object.assign({}, contas), envs: Object.assign({}, envs) } };
+    render();
+  },
+  salvarAcerto: async () => {
+    const f = S.folha;
+    const disp = contasAtivas().filter((c) => c.disponivel).map((c) => c.nome);
+    const livre = disp.reduce((s, n) => s + numBR(f.contas[n]), 0) - Object.keys(f.envs).reduce((s, n) => s + numBR(f.envs[n]), 0);
+    if (livre < -0.009) { avisar('Os envelopes passam do dinheiro das contas. Diminua algum.', true); return; }
+    const contas = contasAtivas().filter((c) => Math.abs(numBR(f.contas[c.nome]) - c.saldo) >= 0.01)
+      .map((c) => ({ conta: c.nome, saldoApp: c.saldo, real: numBR(f.contas[c.nome]) }));
+    const envelopes = (S.dados.envelopes || []).map((e) => ({ envelope: e.nome, delta: numBR(f.envs[e.nome]) - Math.max(0, e.guardado) }))
+      .filter((e) => Math.abs(e.delta) >= 0.01);
+    if (!contas.length && !envelopes.length) { S.folha = null; avisar('Já estava tudo certo'); render(); return; }
+    f.salvando = true; render();
+    try { await api('acertarTudo', { contas, envelopes, quem: eu }); S.folha = null; avisar('Tudo acertado com o banco'); await carregar(); }
+    catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+  },
   reequilibrar: async () => {
     const din = contasDoDinheiro();
     if (din.excesso <= 0) return;
@@ -1065,6 +1110,14 @@ document.addEventListener('input', (e) => {
   if (el) el.textContent = brl(Math.max(0, total - f.div.reduce((s, l) => s + l.real, 0)));
 });
 document.addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.div !== undefined) render(); });
+document.addEventListener('input', (e) => {
+  const a = e.target.dataset && e.target.dataset.acerto;
+  if (!a || !S.folha || S.folha.tipo !== 'acertar') return;
+  const [tipo, nome] = a.split('|');
+  S.folha[tipo === 'conta' ? 'contas' : 'envs'][nome] = e.target.value;
+  const el = document.getElementById('acerto-livre');
+  if (el) el.innerHTML = resumoAcerto(S.folha);
+});
 // Campos de texto: guardam na folha sem redesenhar (senão o teclado do celular fecha a cada letra).
 document.addEventListener('input', (e) => {
   const campo = e.target.dataset && e.target.dataset.campo;
