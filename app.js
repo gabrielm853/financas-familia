@@ -518,7 +518,7 @@ function folhaHtml() {
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><label for="campo-nomeprev">O que vai ser</label><input id="campo-nomeprev" class="campo" placeholder="ex.: corte de cabelo" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
         <div class="grupo"><span>Quando</span><div class="chips">${chips(['Hoje', 'Amanhã', 'Esta semana', 'Este mês'], 'quando', f.quando)}</div></div>
-        <div class="grupo"><span>Para quê</span><div class="chips">${chips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome), 'cat', f.cat)}</div></div>
+        <div class="grupo"><span>Para quê</span><div class="chips">${chips((d.categorias || []).filter((c) => c.tipo === 'saida').map((c) => c.nome), 'cat', f.cat)}${novaCat}</div></div>
         <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Vai para o envelope <b style="color:var(--texto)">${ENV_PREVISTOS}</b>, o primeiro da fila: a próxima divisão já guarda dinheiro para ele.</p>
         <button class="principal" style="background:${cor}" data-a="salvarPrev" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Anotando…' : 'Anotar previsto'}</button>`;
     } else if (f.tipo === 'entrada' || f.tipo === 'saida') {
