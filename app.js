@@ -138,7 +138,38 @@ function contasDoDinheiro() {
   // "Próximos dias" não conta: é para gastar logo, fica no Inter.
   const guardadoMP = guardado - (envPrev ? Math.max(0, envPrev.guardado) : 0);
   const faltaMandar = mp && mp.temSaldoInicial ? Math.max(0, Math.round(guardadoMP - mp.saldo)) : 0;
-  return { nasContas, guardado, prevSemDinheiro, livre: nasContas - guardado - prevSemDinheiro, faltaMandar };
+  // livreReal = dinheiro sem destino. Se for negativo, os envelopes prometem mais
+  // do que existe: isso vira "excesso" e é corrigido tirando do menos urgente.
+  const livreReal = nasContas - guardado;
+  const livre = Math.max(0, livreReal - prevSemDinheiro);
+  const faltaPrev = Math.max(0, prevSemDinheiro - Math.max(0, livreReal));
+  return { nasContas, guardado, prevSemDinheiro, livreReal, livre, faltaPrev, excesso: Math.max(0, Math.round(-livreReal * 100) / 100), faltaMandar };
+}
+
+// Este gasto passa do livre? Só conta para conta do dia a dia (não Mercado Pago,
+// não cofre) e para gasto que não é conta fixa/previsto (esses já têm envelope).
+function passaDoLivre(f, valorNum) {
+  if (f.compromisso || f.conta === CONTA_ENVELOPES || f.substitui) return null;
+  const conta = contasAtivas().find((c) => c.nome === f.conta);
+  if (!conta || !conta.disponivel) return null;
+  const livre = Math.max(0, contasDoDinheiro().livreReal);
+  const falta = Math.round((valorNum - livre) * 100) / 100;
+  if (falta <= 0) return null;
+  return Object.assign({ livre, falta }, planoTirar(falta));
+}
+
+// De onde tirar quando falta: do envelope MENOS urgente para o mais urgente.
+// "Próximos dias" é prioridade 1, então é sempre o último.
+function planoTirar(falta) {
+  let resto = Math.round(falta * 100) / 100;
+  const plano = [];
+  (S.dados.envelopes || []).slice().sort((a, b) => b.prioridade - a.prioridade).forEach((e) => {
+    if (resto <= 0 || e.guardado <= 0) return;
+    const v = Math.min(e.guardado, resto);
+    plano.push({ envelope: e.nome, valor: Math.round(v * 100) / 100, sobra: e.guardado - v, meta: e.meta });
+    resto = Math.round((resto - v) * 100) / 100;
+  });
+  return { plano, naoCobre: resto };
 }
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
 function previstos() {
@@ -291,12 +322,18 @@ function telaInicio() {
   <section class="saldo">
     <div class="saldo-linha"><span class="sub">Livre para gastar</span>
       <button class="btn-icone" style="margin:-12px 0" data-a="ocultar" aria-label="Mostrar ou esconder valores">${IC.olho}</button></div>
-    <span class="saldo-valor" style="${din.livre < 0 ? 'color:var(--vermelho-txt)' : ''}">${priv(brl(din.livre, true))}</span>
-    ${din.guardado || din.prevSemDinheiro ? `<span class="sub" style="font-size:12px;line-height:1.5">Já descontado: ${priv(brl(din.guardado))} nos envelopes${din.prevSemDinheiro ? ` e ${priv(brl(din.prevSemDinheiro))} de gastos previstos ainda sem dinheiro guardado` : ''}.</span>` : ''}
+    <span class="saldo-valor">${priv(brl(din.livre, true))}</span>
+    ${din.guardado ? `<span class="sub" style="font-size:12px;line-height:1.5">Já descontado: ${priv(brl(din.guardado))} nos envelopes${din.prevSemDinheiro - din.faltaPrev > 0 ? ` e ${priv(brl(din.prevSemDinheiro - din.faltaPrev))} de gastos previstos` : ''}.</span>` : ''}
+    ${din.faltaPrev > 0 ? `<span class="sub" style="font-size:12px;color:var(--laranja-txt)">Faltam ${priv(brl(din.faltaPrev))} para cobrir os gastos previstos.</span>` : ''}
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
     ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<button class="lista-linha" style="width:100%;background:none;border:0;border-top:1px solid rgba(255,255,255,.06);color:inherit;font:inherit;cursor:pointer" data-a="ajustar" data-v="${esc(c.nome)}"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo, true))} <small style="color:var(--azul-txt);font-weight:600">editar</small></b></button>`).join('')}</div>` : ''}
   </section>
   ${cartaoPassou(hoje)}
+  ${din.excesso > 0.009 ? (() => {
+    const pl = planoTirar(din.excesso);
+    return `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="reequilibrar">Os envelopes estão com <b>${priv(brl(din.excesso, true))}</b> a mais do que existe nas contas: algum gasto saiu sem descontar de envelope.
+      Vai sair de <b>${pl.plano.map((t) => esc(t.envelope) + ' (' + brl(t.valor, true) + ')').join(', ')}</b>. <b style="color:var(--texto)">Toque para acertar →</b></button>`;
+  })() : ''}
   ${din.faltaMandar > 1 ? `<button class="faixa-alerta" style="text-align:left;width:100%;border-color:var(--azul);color:var(--azul-txt)" data-a="mandarMP" data-v="${din.faltaMandar}">Falta mandar <b>${priv(brl(din.faltaMandar))}</b> para o ${CONTA_ENVELOPES}: é dinheiro de envelope que ainda está no Inter. <b style="color:var(--texto)">Já mandei →</b></button>` : ''}
   ${semInicial.length ? `<button class="faixa-alerta" style="text-align:left;width:100%" data-a="saldoIni">Falta dizer quanto tem em: <b>${semInicial.map(esc).join(', ')}</b>. Sem isso o saldo começa do zero. <b style="color:var(--texto)">Toque para preencher →</b></button>` : ''}
 
@@ -583,7 +620,19 @@ function folhaHtml() {
           <span><b>Antes do envelope:</b> ${outras.map((c) => `${esc(c.nome)} tem ${brl(c.saldo, true)}`).join(', ')}. Dá para um mandar para o outro e o envelope fica inteiro.</span>
           <button class="chip on" style="align-self:flex-start" data-a="nova" data-v="mover">Mover entre vocês</button></div>` + alertaEnv;
       }
-      const precisaConfirmar = doEnvelope && f.cat && ESSENCIAIS.indexOf(f.cat) < 0;
+      // Gasto do Inter maior que o livre: a diferença sai dos envelopes menos urgentes.
+      const passa = f.tipo === 'saida' ? passaDoLivre(f, valorNum) : null;
+      if (passa) {
+        const essencial = ESSENCIAIS.indexOf(f.cat) >= 0;
+        const lista = passa.plano.map((t) => `<b>${esc(t.envelope)}</b> −${brl(t.valor, true)} (fica ${brl(Math.max(0, t.sobra))}${t.meta ? ' de ' + brl(t.meta) : ''})`).join('<br>');
+        const cabeca = !f.cat ? `O livre é ${brl(passa.livre, true)}. Escolha com o quê, para o app pesar.`
+          : essencial ? `O livre é ${brl(passa.livre, true)}. ${esc(f.cat)} é essencial: os ${brl(passa.falta, true)} que faltam saem do envelope menos urgente.`
+          : `<b>Pare um segundo.</b> O livre acabou (${brl(passa.livre, true)}). ${esc(f.cat)} não é essencial, e os ${brl(passa.falta, true)} que faltam vão sair de dinheiro que já tem destino. Dá para esperar?`;
+        alertaEnv += `<div class="faixa-alerta" style="margin:0;display:flex;flex-direction:column;gap:6px;${essencial ? 'border-color:var(--azul);color:var(--azul-txt)' : ''}">
+          <span>${cabeca}</span>${f.cat ? `<span style="font-size:13px">${lista}</span>` : ''}
+          ${passa.naoCobre > 0 ? `<span style="font-size:13px">Mesmo assim faltam ${brl(passa.naoCobre, true)}: confira o saldo da conta.</span>` : ''}</div>`;
+      }
+      const precisaConfirmar = (doEnvelope || passa) && f.cat && ESSENCIAIS.indexOf(f.cat) < 0;
       corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${catChips(cats)}</div></div>
         ${f.tipo === 'saida' ? `<div class="grupo"><label for="campo-item">O que exatamente (opcional)</label><input id="campo-item" class="campo" placeholder="ex.: fralda pacote G" value="${esc(f.item)}" data-campo="item"></div>
@@ -653,9 +702,17 @@ async function salvarFolha() {
       // Não essencial: o primeiro toque só mostra o aviso; o segundo confirma.
       if (ESSENCIAIS.indexOf(f.cat) < 0 && !f.confirmarTirar) { f.confirmarTirar = true; render(); return; }
     }
+    const passa = passaDoLivre(f, valor);
+    if (passa) {
+      if (!f.cat) { avisar('Escolha com o quê.', true); return; }
+      if (ESSENCIAIS.indexOf(f.cat) < 0 && !f.confirmarTirar) { f.confirmarTirar = true; render(); return; }
+    }
     pedido = Object.assign(base, { tipo: 'saida', categoria: f.cat || 'Outro', item: f.item, lugar: f.lugar, compromisso: f.compromisso || '',
-      envelope: doEnvelope ? f.envelope : '', obs: doEnvelope ? 'tirado do envelope ' + f.envelope : '' });
-    msg = f.compromisso ? f.compromisso + ': pago e anotado' : doEnvelope ? 'Anotado. Saiu de ' + f.envelope : 'Anotado';
+      envelope: doEnvelope ? f.envelope : '',
+      tirarDe: passa ? passa.plano.map((t) => ({ envelope: t.envelope, valor: t.valor })) : [],
+      obs: doEnvelope ? 'tirado do envelope ' + f.envelope : passa ? 'passou do livre: tirou de ' + passa.plano.map((t) => t.envelope).join(', ') : '' });
+    msg = f.compromisso ? f.compromisso + ': pago e anotado' : doEnvelope ? 'Anotado. Saiu de ' + f.envelope
+      : passa ? 'Anotado. Saiu de ' + passa.plano.map((t) => t.envelope).join(', ') : 'Anotado';
   } else if (f.tipo === 'entrada') {
     if (f.div.reduce((s, l) => s + l.real, 0) > valor + 0.001) { avisar('A divisão passou do valor que entrou.', true); return; }
     pedido = Object.assign(base, { tipo: 'entrada', categoria: f.cat || 'Outro', divisao: f.div });
@@ -809,6 +866,15 @@ const acoes = {
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
+  reequilibrar: async () => {
+    const din = contasDoDinheiro();
+    if (din.excesso <= 0) return;
+    const pl = planoTirar(din.excesso);
+    try {
+      await api('tirarEnvelopes', { itens: pl.plano.map((t) => ({ envelope: t.envelope, valor: t.valor })) });
+      avisar('Acertado. Saiu de ' + pl.plano.map((t) => t.envelope).join(', ')); await carregar();
+    } catch (e) { if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); }
+  },
   editarPrev: () => {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome);
     if (!c) return;
