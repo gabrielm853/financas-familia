@@ -672,7 +672,12 @@ function folhaHtml() {
   } else if (f.tipo === 'acertar') {
     const campo = (tipo, nome, valor) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(nome)}</span>
       <input class="campo" style="width:120px;text-align:right;padding:8px 10px;min-height:0" inputmode="decimal" value="${esc(valor)}" data-acerto="${tipo}|${esc(nome)}"></div>`;
-    corpo = `<p class="sub" style="font-size:13px;line-height:1.5;margin:0">Já vem com o que o app sabe. Corrija só o que estiver diferente e toque em Salvar.</p>
+    corpo = `<div class="pergunta" style="gap:10px"><span class="rotulo" style="color:var(--azul-txt)">Só sabe o total? O app divide</span>
+        <div class="grupo"><label for="ac-total">Quanto vocês têm ao todo (sem o cofre)</label><input id="ac-total" class="campo" inputmode="decimal" placeholder="ex.: 1.250,40" value="${esc(f.total || '')}" data-campo="total"></div>
+        <div class="grupo"><label for="ac-especie">Quanto disso é em espécie</label><input id="ac-especie" class="campo" inputmode="decimal" placeholder="0,00" value="${esc(f.especie || '')}" data-campo="especie"></div>
+        <button class="chip on" style="align-self:flex-start" data-a="montarTotal">Montar a divisão</button>
+        ${f.montado ? `<p class="sub" style="font-size:13px;line-height:1.5;margin:0">Pronto. Os campos abaixo já estão com a divisão: envelopes pela prioridade (no ${CONTA_ENVELOPES}), o resto metade para cada Inter. <b style="color:var(--texto)">Façam os Pix para os bancos ficarem assim</b> e toquem em Salvar.</p>` : ''}</div>
+      <p class="sub" style="font-size:13px;line-height:1.5;margin:0">Ou corrija conta por conta: já vem com o que o app sabe.</p>
       <span class="rotulo">1. Quanto tem em cada conta (olhe no banco)</span>
       <div class="lista" style="background:var(--cartao2)">${Object.keys(f.contas).map((n) => campo('conta', n, f.contas[n])).join('')}</div>
       <span class="rotulo">2. Quanto fica em cada envelope</span>
@@ -1074,6 +1079,33 @@ const acoes = {
     contasAtivas().forEach((c) => { contas[c.nome] = txtBR(c.saldo); });
     (S.dados.envelopes || []).forEach((e) => { envs[e.nome] = txtBR(Math.max(0, e.guardado)); });
     S.folha = { tipo: 'acertar', contas, envs, inicio: { contas: Object.assign({}, contas), envs: Object.assign({}, envs) } };
+    render();
+  },
+  // Digitou só o total: envelopes enchem pela prioridade (1 = mais urgente) até a meta,
+  // o que sobra é livre e vai metade para cada Inter. O cofre fica como está.
+  montarTotal: () => {
+    const f = S.folha;
+    const total = numBR(f.total || ''), especie = numBR(f.especie || '');
+    if (!(total > 0)) { avisar('Digite quanto vocês têm ao todo.', true); return; }
+    if (especie > total) { avisar('A espécie não pode passar do total.', true); return; }
+    const temEspecie = contasAtivas().some((c) => c.nome === 'Em espécie');
+    if (especie > 0 && !temEspecie) { avisar('Aperte F5 na planilha para criar a conta Em espécie.', true); return; }
+    let resta = total;
+    const ordem = (S.dados.envelopes || []).slice().sort((a, b) => (Number(a.prioridade) || 99) - (Number(b.prioridade) || 99));
+    ordem.forEach((e) => {
+      const precisa = e.nome === ENV_PREVISTOS && !PREVISTOS_LIGADO ? 0 : Math.max(0, Number(e.meta) || 0);
+      const vai = Math.min(precisa, resta);
+      resta = Math.round((resta - vai) * 100) / 100;
+      f.envs[e.nome] = txtBR(vai);
+    });
+    const guardado = Math.round((total - resta) * 100) / 100;
+    const nosInter = Math.max(0, Math.round((resta - especie) * 100) / 100);
+    const metade = Math.floor(nosInter * 100 / 2) / 100;
+    if ('Inter Gabriel' in f.contas) f.contas['Inter Gabriel'] = txtBR(nosInter - metade);
+    if ('Inter Débora' in f.contas) f.contas['Inter Débora'] = txtBR(metade);
+    if (CONTA_ENVELOPES in f.contas) f.contas[CONTA_ENVELOPES] = txtBR(guardado);
+    if (temEspecie) f.contas['Em espécie'] = txtBR(especie);
+    f.montado = true;
     render();
   },
   salvarAcerto: async () => {
