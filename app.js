@@ -187,11 +187,11 @@ function resumoAcerto(f) {
 }
 
 // De onde tirar quando falta: do envelope MENOS urgente para o mais urgente.
-// "Próximos dias" é prioridade 1, então é sempre o último.
+// Envelope com conta atrasada é o último a ser tocado.
 function planoTirar(falta) {
   let resto = Math.round(falta * 100) / 100;
   const plano = [];
-  (S.dados.envelopes || []).slice().sort((a, b) => b.prioridade - a.prioridade).forEach((e) => {
+  (S.dados.envelopes || []).slice().reverse().forEach((e) => {  // a API manda do mais urgente ao menos
     if (resto <= 0 || e.guardado <= 0) return;
     const v = Math.min(e.guardado, resto);
     plano.push({ envelope: e.nome, valor: Math.round(v * 100) / 100, sobra: e.guardado - v, meta: e.meta });
@@ -1092,7 +1092,7 @@ const acoes = {
     const temEspecie = contasAtivas().some((c) => c.nome === 'Em espécie');
     if (especie > 0 && !temEspecie) { avisar('Aperte F5 na planilha para criar a conta Em espécie.', true); return; }
     let resta = total;
-    const ordem = (S.dados.envelopes || []).slice().sort((a, b) => (Number(a.prioridade) || 99) - (Number(b.prioridade) || 99));
+    const ordem = S.dados.envelopes || [];  // a API já manda na ordem: atrasadas primeiro, depois a prioridade
     ordem.forEach((e) => {
       const precisa = e.nome === ENV_PREVISTOS && !PREVISTOS_LIGADO ? 0 : Math.max(0, Number(e.meta) || 0);
       const vai = Math.min(precisa, resta);
