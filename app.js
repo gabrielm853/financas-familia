@@ -10,6 +10,8 @@
 const API = 'https://script.google.com/macros/s/AKfycbxriI1SGh0VkSg8jAwh_gl5umYEVtarFvGeu_QtHJNxAnagOfD40s5FZiMdxDZhmaaQ/exec';
 const LIVRE_MINIMO = 0.15; // na divisão, pelo menos 15% fica livre para o dia a dia
 const CONTA_ENVELOPES = 'Mercado Pago'; // onde mora todo o dinheiro dos envelopes
+// O cofre da mãe não entra no livre, mas é do aniversário: gasto de aniversário pode sair dele.
+const COFRE = 'Cofre da mãe', COFRE_PARA = 'Aniversário';
 // 23/10: previstos desligados (anotar antes e depois deu trabalho). Religar: true aqui e no Api.gs.
 const PREVISTOS_LIGADO = false;
 const ENV_PREVISTOS = 'Próximos dias';   // envelope dos gastos que já se sabe que vêm
@@ -200,6 +202,27 @@ function planoTirar(falta) {
   return { plano, naoCobre: resto };
 }
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
+const saldoCofre = () => Math.max(0, ((S.dados.contas || []).find((c) => c.nome === COFRE) || {}).saldo || 0);
+// Quanto um envelope ainda precisa receber das contas do dia a dia, partindo do zero.
+// O aniversário desconta o que já está no cofre.
+function precisaEnvelope(e) {
+  if (e.nome === ENV_PREVISTOS && !PREVISTOS_LIGADO) return 0;
+  const meta = Math.max(0, Number(e.meta) || 0);
+  return e.nome === COFRE_PARA ? Math.max(0, meta - saldoCofre()) : meta;
+}
+// Sugestão de "remontar": o dinheiro do dia a dia (sem o cofre) dividido do zero,
+// na ordem que a API manda (atrasadas primeiro), com 15% livre.
+function sugerirRemontar() {
+  const total = contasDoDinheiro().nasContas;
+  let resto = Math.round((total - total * LIVRE_MINIMO) * 100) / 100;
+  const envs = {};
+  (S.dados.envelopes || []).filter(envVisivel).forEach((e) => {
+    const v = Math.max(0, Math.min(precisaEnvelope(e), resto));
+    resto = Math.round((resto - v) * 100) / 100;
+    envs[e.nome] = txtBR(v);
+  });
+  return envs;
+}
 // Com os previstos desligados, "Próximos dias" só aparece se ainda tiver dinheiro nele.
 const envVisivel = (e) => PREVISTOS_LIGADO || e.nome !== ENV_PREVISTOS || e.guardado >= 0.01;
 const ehGanho = (c) => c.envelope === ENTRADA_PREV;
@@ -537,7 +560,8 @@ function corpoPrevistos(e, hoje) {
 
 function telaEnvelopes() {
   const d = S.dados;
-  return `<div><h1 class="titulo">Envelopes</h1><p class="sub">Toque em um para ver o sugerido e o real.</p></div>
+  return `<div><h1 class="titulo">Envelopes</h1><p class="sub">Toque em um para ver o que tem e o que falta.</p></div>
+  <button class="principal" style="background:linear-gradient(135deg,var(--azul),var(--azul-2));font-size:14px;min-height:48px" data-a="remontar">Remontar a divisão</button>
   <section style="display:flex;flex-direction:column;gap:10px">
   ${(d.envelopes || []).filter(envVisivel).map((e) => {
     const st = situacaoEnvelope(e, d.hoje);
@@ -552,6 +576,7 @@ function telaEnvelopes() {
         ${e.meta ? `<div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(e.meta)}</b></div>
         <div class="barra"><i style="width:${pct}%;background:${st.cor}"></i></div>
         <div class="par"><span>Falta</span><b>${brl(Math.max(0, e.meta - e.guardado), true)}${e.dataAlvo ? ' até ' + diaMes(e.dataAlvo) : ''}</b></div>` : '<p class="nota">Sem meta ainda. Dá para pôr na planilha, aba Envelopes, coluna meta.</p>'}
+        ${e.nome === COFRE_PARA && saldoCofre() ? `<p class="nota" style="color:var(--verde)">+ ${priv(brl(saldoCofre(), true))} no ${COFRE}: pode ser gasto no ${COFRE_PARA}.</p>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
         <div style="display:flex;justify-content:center;gap:22px">
@@ -631,7 +656,7 @@ function folhaHtml() {
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', ganho: 'var(--verde)', mandarMP: 'var(--azul)', ajuste: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
     previsto: f.editandoPrev ? 'Editar previsto' : 'Vai ter gasto', ganho: f.editandoPrev ? 'Editar entrada prevista' : 'Vai entrar', prevVer: f.nome || '',
-    proxCaderneta: 'Caderneta do próximo mês', ajuste: 'Corrigir saldo', acertar: 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    proxCaderneta: 'Caderneta do próximo mês', ajuste: 'Corrigir saldo', acertar: f.remontar ? 'Remontar a divisão' : 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -673,6 +698,14 @@ function folhaHtml() {
   } else if (f.tipo === 'acertar') {
     const campo = (tipo, nome, valor) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(nome)}</span>
       <input class="campo" style="width:120px;text-align:right;padding:8px 10px;min-height:0" inputmode="decimal" value="${esc(valor)}" data-acerto="${tipo}|${esc(nome)}"></div>`;
+    if (f.remontar) {
+      corpo = `<p class="sub" style="font-size:13px;line-height:1.5;margin:0">A sugestão do app: <b style="color:var(--texto)">atrasadas primeiro</b>, depois a prioridade, e 15% fica livre. Mude o que quiser.</p>
+        ${saldoCofre() ? `<p class="nota" style="margin:0">O ${COFRE} (${brl(saldoCofre(), true)}) já conta para o ${COFRE_PARA}.</p>` : ''}
+        <div class="lista" style="background:var(--cartao2)">${Object.keys(f.envs).map((n) => campo('env', n, f.envs[n])).join('')}</div>
+        <button class="link" style="align-self:flex-start" data-a="voltarSugestao">Voltar à sugestão do app</button>
+        <div class="secao"><span class="cresce"><b>Livre para gastar</b><small>contas − envelopes</small></span><b id="acerto-livre" style="font-size:22px">${resumoAcerto(f)}</b></div>
+        <button class="principal" style="background:var(--azul)" data-a="salvarAcerto" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar divisão'}</button>`;
+    } else
     corpo = `<div class="pergunta" style="gap:10px"><span class="rotulo" style="color:var(--azul-txt)">Só sabe o total? O app divide</span>
         <div class="grupo"><label for="ac-total">Quanto vocês têm ao todo (sem o cofre)</label><input id="ac-total" class="campo" inputmode="decimal" placeholder="ex.: 1.250,40" value="${esc(f.total || '')}" data-campo="total"></div>
         <div class="grupo"><label for="ac-especie">Quanto disso é em espécie</label><input id="ac-especie" class="campo" inputmode="decimal" placeholder="0,00" value="${esc(f.especie || '')}" data-campo="especie"></div>
@@ -775,6 +808,12 @@ function folhaHtml() {
         if (outras.length) alertaEnv = `<div class="faixa-alerta" style="margin:0;border-color:var(--azul);color:var(--azul-txt);display:flex;flex-direction:column;gap:8px">
           <span><b>Antes do envelope:</b> ${outras.map((c) => `${esc(c.nome)} tem ${brl(c.saldo, true)}`).join(', ')}. Dá para um mandar para o outro e o envelope fica inteiro.</span>
           <button class="chip on" style="align-self:flex-start" data-a="nova" data-v="mover">Mover entre vocês</button></div>` + alertaEnv;
+      }
+      if (f.tipo === 'saida' && f.conta === COFRE) {
+        const doAniv = /anivers/i.test((f.cat || '') + ' ' + (f.item || ''));
+        alertaEnv += `<div class="faixa-alerta" style="margin:0;${doAniv || !f.cat ? 'border-color:var(--azul);color:var(--azul-txt)' : ''}">${doAniv || !f.cat
+          ? `O ${COFRE} é do ${COFRE_PARA}: gasto do ${COFRE_PARA} pode sair daqui.`
+          : `<b>Pare um segundo.</b> O ${COFRE} é só para o ${COFRE_PARA}. ${esc(f.cat)} não é do ${COFRE_PARA}: é isso mesmo?`}</div>`;
       }
       // Gasto do Inter maior que o livre: a diferença sai dos envelopes menos urgentes.
       const passa = f.tipo === 'saida' ? passaDoLivre(f, valorNum) : null;
@@ -1082,6 +1121,13 @@ const acoes = {
     S.folha = { tipo: 'acertar', contas, envs, inicio: { contas: Object.assign({}, contas), envs: Object.assign({}, envs) } };
     render();
   },
+  remontar: () => {
+    acoes.acertar();
+    S.folha.remontar = true;
+    S.folha.envs = sugerirRemontar();
+    render();
+  },
+  voltarSugestao: () => { S.folha.envs = sugerirRemontar(); render(); },
   // Digitou só o total: envelopes enchem pela prioridade (1 = mais urgente) até a meta,
   // o que sobra é livre e vai metade para cada Inter. O cofre fica como está.
   montarTotal: () => {
@@ -1094,7 +1140,7 @@ const acoes = {
     let resta = total;
     const ordem = S.dados.envelopes || [];  // a API já manda na ordem: atrasadas primeiro, depois a prioridade
     ordem.forEach((e) => {
-      const precisa = e.nome === ENV_PREVISTOS && !PREVISTOS_LIGADO ? 0 : Math.max(0, Number(e.meta) || 0);
+      const precisa = precisaEnvelope(e);
       const vai = Math.min(precisa, resta);
       resta = Math.round((resta - vai) * 100) / 100;
       f.envs[e.nome] = txtBR(vai);
