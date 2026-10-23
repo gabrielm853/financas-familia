@@ -215,7 +215,8 @@ function previsaoMes() {
       .reduce((s, c) => s + c.valor, 0);
     contas += Math.max(0, devidas - Math.max(0, e.guardado));
   });
-  return { ate, entra, contas, fim: contasDoDinheiro().livre + entra - contas };
+  // Dinheiro previsto não conta até cair: o fim do mês usa só o que já existe.
+  return { ate, entra, contas, fim: contasDoDinheiro().livre - contas };
 }
 // Dia de cair dinheiro: o app pergunta, e o "caiu" já abre a divisão.
 function cartaoGanho(hoje) {
@@ -431,9 +432,9 @@ function telaInicio() {
     </div>
     ${S.previsaoAberta ? `<div class="previsao">
       <div class="par"><span>Livre agora</span><b>${priv(brl(din.livre))}</b></div>
-      <div class="par"><span>+ Vai entrar até ${diaMes(prev.ate)}</span><b style="color:var(--verde)">${priv(brl(prev.entra))}</b></div>
       <div class="par"><span>− Contas do mês sem dinheiro guardado</span><b style="color:var(--laranja-txt)">${priv(brl(prev.contas))}</b></div>
       <hr><div class="par"><span style="color:var(--texto)">Como o mês fecha</span><b style="color:${fimCor}">${priv(brl(prev.fim))}</b></div>
+      ${prev.entra ? `<p class="sub" style="font-size:12px;margin:0;line-height:1.5">Fora da conta: ${priv(brl(prev.entra))} previstos para entrar até ${diaMes(prev.ate)}. Só contam depois de cair.</p>` : ''}
       <p class="sub" style="font-size:12px;margin:0;line-height:1.5">É uma previsão: muda conforme vocês anotam o que entra e o que sai.</p></div>` : ''}
     <button class="total" data-a="contas" aria-expanded="${S.contasAbertas}">Total com o cofre <strong>${priv(brl(total))}</strong><span class="seta ${S.contasAbertas ? 'virada' : ''}">${IC.seta}</span></button>
     ${S.contasAbertas ? `<div class="lista">${contas.map((c) => `<button class="lista-linha" style="width:100%" data-a="ajustar" data-v="${esc(c.nome)}"><span style="color:var(--texto2)">${esc(c.nome)}</span><b>${priv(brl(c.saldo))} <small style="color:var(--azul-txt);font-weight:600">editar</small></b></button>`).join('')}
@@ -729,7 +730,7 @@ function folhaHtml() {
     if (f.tipo === 'previsto' || f.tipo === 'ganho') {
       const ganho = f.tipo === 'ganho';
       const catsLista = (d.categorias || []).filter((c) => c.tipo === (ganho ? 'entrada' : 'saida')).map((c) => c.nome);
-      corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
+      corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
         <div class="grupo"><label for="campo-nomeprev">${ganho ? 'O que vai entrar' : 'O que vai ser'}</label><input id="campo-nomeprev" class="campo" placeholder="${ganho ? 'ex.: edição do mês' : 'ex.: corte de cabelo'}" value="${esc(f.nomePrev || '')}" data-campo="nomePrev"></div>
         ${madrugada() ? `<p class="nota" style="margin:0;color:var(--azul-txt)">Já passou da meia-noite: "Hoje" é ${diaMes(d.hoje)}, "Amanhã" é ${diaMes(dataDoQuando('Amanhã'))}.</p>` : ''}
         <div class="grupo"><span>Quando${f.dataAtual && !f.quando && !f.dataExata ? ` <small style="color:var(--apagado)">(agora: ${quandoPrev(f.dataAtual, d.hoje)})</small>` : ''}</span>
@@ -778,7 +779,7 @@ function folhaHtml() {
           ${passa.naoCobre > 0 ? `<span style="font-size:13px">Mesmo assim faltam ${brl(passa.naoCobre, true)}: confira o saldo da conta.</span>` : ''}</div>`;
       }
       const precisaConfirmar = (doEnvelope || passa) && f.cat && ESSENCIAIS.indexOf(f.cat) < 0;
-      corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
+      corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
         <div class="grupo"><span>${f.tipo === 'entrada' ? 'De onde veio' : 'Com o quê'}</span><div class="chips">${catChips(cats)}</div></div>
         ${f.tipo === 'saida' ? `<div class="grupo"><label for="campo-item">O que exatamente (opcional)</label><input id="campo-item" class="campo" placeholder="ex.: fralda pacote G" value="${esc(f.item)}" data-campo="item"></div>
         <div class="grupo"><label for="campo-lugar">Onde comprou (para comparar preço)</label><input id="campo-lugar" class="campo" placeholder="ex.: mercadinho Y" value="${esc(f.lugar)}" data-campo="lugar"></div>` : ''}
@@ -789,14 +790,14 @@ function folhaHtml() {
         ${quemDeQuem}
         <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : precisaConfirmar ? (f.confirmarTirar ? 'Sim, é importante: tirar' : 'Tirar do envelope') : 'Anotar saída')}</button>`;
     } else if (f.tipo === 'mover') {
-      corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
+      corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
         <div class="grupo"><span>De onde sai</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
         <div class="grupo"><span>Para onde vai</span><div class="chips">${chips(nomesContas, 'para', f.para)}</div></div>
         ${quemDeQuem}
         <p class="sub" style="font-size:13px;color:var(--azul-txt);line-height:1.5">Mover não é gasto: o dinheiro só troca de lugar.</p>
         <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Movendo…' : 'Mover'}</button>`;
     } else if (f.tipo === 'guardar') {
-      corpo = `<b style="font-size:32px;font-weight:800;letter-spacing:-.03em;color:${cor}">R$ ${esc(f.valor)}</b>
+      corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
         <div class="grupo"><span>Esse dinheiro está em qual conta agora?</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
         ${quemDeQuem}
         <p class="sub" style="font-size:13px;line-height:1.5">${f.envelope === ENV_PREVISTOS ? `O dinheiro fica no ${esc(f.conta)}: é para gastar logo. Ele só passa a ter destino.`
@@ -1032,6 +1033,7 @@ const acoes = {
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
   fechar: () => { S.folha = null; render(); },
   voltar: () => { S.folha.passo--; render(); },
+  mudarValor: () => { S.folha.valor = ''; S.folha.passo = 1; render(); },
   tentar: () => { S.erroCarga = ''; render(); },
   tecla: (k) => {
     const f = S.folha; let v = f.valor || '';

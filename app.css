@@ -247,3 +247,8 @@ input { font-family: inherit; }
 
 /* "hidden" precisa vencer o display:flex das classes, senão o aviso nunca some. */
 [hidden] { display: none !important; }
+
+.valor-toque { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; text-align: left; align-self: flex-start; }
+.valor-toque b { font-size: 32px; font-weight: 800; letter-spacing: -.03em; }
+.valor-toque span { font-size: 12px; font-weight: 700; color: var(--azul); padding: 5px 10px; border-radius: 999px; background: rgba(141,166,255,.12); }
+.valor-toque:active { transform: scale(.97); }
