@@ -10,6 +10,8 @@
 const API = 'https://script.google.com/macros/s/AKfycbxriI1SGh0VkSg8jAwh_gl5umYEVtarFvGeu_QtHJNxAnagOfD40s5FZiMdxDZhmaaQ/exec';
 const LIVRE_MINIMO = 0.15; // na divisão, pelo menos 15% fica livre para o dia a dia
 const CONTA_ENVELOPES = 'Mercado Pago'; // onde mora todo o dinheiro dos envelopes
+// 23/10: previstos desligados (anotar antes e depois deu trabalho). Religar: true aqui e no Api.gs.
+const PREVISTOS_LIGADO = false;
 const ENV_PREVISTOS = 'Próximos dias';   // envelope dos gastos que já se sabe que vêm
 const ENTRADA_PREV = 'Vai entrar';        // marca das entradas previstas (não é envelope de verdade)
 // Tirar dinheiro de envelope para estas é aceitável; para o resto, o app pergunta duas vezes.
@@ -136,7 +138,7 @@ function contasDoDinheiro() {
   const nasContas = contas.filter((c) => c.disponivel).reduce((s, c) => s + c.saldo, 0);
   const guardado = (d.envelopes || []).reduce((s, e) => s + Math.max(0, e.guardado), 0);
   const envPrev = (d.envelopes || []).find((e) => e.nome === ENV_PREVISTOS);
-  const prevSemDinheiro = envPrev ? Math.max(0, envPrev.meta - Math.max(0, envPrev.guardado)) : 0;
+  const prevSemDinheiro = envPrev && PREVISTOS_LIGADO ? Math.max(0, envPrev.meta - Math.max(0, envPrev.guardado)) : 0;
   const mp = contas.find((c) => c.nome === CONTA_ENVELOPES);
   // Quanto do dinheiro de envelope ainda está fora do Mercado Pago. O dos
   // "Próximos dias" não conta: é para gastar logo, fica no Inter.
@@ -199,6 +201,7 @@ function planoTirar(falta) {
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
 const ehGanho = (c) => c.envelope === ENTRADA_PREV;
 function ganhos() {
+  if (!PREVISTOS_LIGADO) return [];
   return (S.dados.compromissos || []).filter(ehGanho).sort((a, b) => (a.proximaData || '9').localeCompare(b.proximaData || '9'));
 }
 // Como o mês fecha: livre de hoje + o que vai entrar − as contas do mês que
@@ -252,6 +255,7 @@ function animarLivre() {
 const caderneta = () => (S.dados.compromissos || []).find((c) => /^Caderneta/.test(c.nome));
 const contaDe = (pessoa) => (pessoa === 'Débora' ? 'Inter Débora' : 'Inter Gabriel');
 function previstos() {
+  if (!PREVISTOS_LIGADO) return [];
   return (S.dados.compromissos || []).filter(ehPrevisto).sort((a, b) => (a.proximaData || '9').localeCompare(b.proximaData || '9'));
 }
 // O que precisa estar à mão em cada prazo, e os previstos agrupados por categoria.
@@ -459,7 +463,7 @@ function telaInicio() {
   </section>
   ${faixa}
 
-  <section style="display:flex;flex-direction:column;gap:10px">
+  ${PREVISTOS_LIGADO ? `<section style="display:flex;flex-direction:column;gap:10px">
     <div class="secao"><h2><span class="sec-icone ok">↓</span>Vai entrar</h2><button class="link" data-a="nova" data-v="ganho">+ Adicionar</button></div>
     ${gans.length ? `<div class="tempo">${gans.map((c) => itemTempo(c, true)).join('')}</div>`
       : '<p class="vazio">Edição, Bolsa Família, Pé-de-Meia… Anote o que vai cair e quando: o app passa a prever como o mês fecha.</p>'}
@@ -469,7 +473,7 @@ function telaInicio() {
     <div class="secao"><h2><span class="sec-icone atencao">↑</span>Vai ter gasto</h2><button class="link" data-a="nova" data-v="previsto">+ Adicionar</button></div>
     ${prevs.length ? `<div class="tempo">${prevs.map((c) => itemTempo(c, false)).join('')}</div>`
       : '<p class="vazio">Lembrou de um gasto que vem aí (cabelo, compra na cidade)? Anote aqui: a divisão passa a guardar dinheiro para ele.</p>'}
-  </section>
+  </section>` : ''}
 
   <section class="cartao dicas">
     <div class="secao"><span class="rotulo" style="color:${dica.c}">${dica.r}</span>
@@ -532,7 +536,7 @@ function telaEnvelopes() {
   const d = S.dados;
   return `<div><h1 class="titulo">Envelopes</h1><p class="sub">Toque em um para ver o sugerido e o real.</p></div>
   <section style="display:flex;flex-direction:column;gap:10px">
-  ${(d.envelopes || []).map((e) => {
+  ${(d.envelopes || []).filter((e) => PREVISTOS_LIGADO || e.nome !== ENV_PREVISTOS || e.guardado > 0).map((e) => {
     const st = situacaoEnvelope(e, d.hoje);
     const aberto = S.envAberto === e.nome;
     const pct = e.meta ? Math.min(100, e.guardado / e.meta * 100) : 0;
@@ -541,8 +545,8 @@ function telaEnvelopes() {
       <button class="env-topo" data-a="env" data-v="${esc(e.nome)}" aria-expanded="${aberto}">${anel(e.meta ? e.guardado / e.meta : 0, 52, 6, st.cor)}
         <span class="cresce"><b style="font-size:15px;font-weight:700">${esc(e.nome)}</b><small style="font-size:13px">${priv(brl(e.guardado))}${e.meta ? ' de ' + brl(e.meta) : ''}</small></span>
         <span class="etiqueta ${st.cls}">${st.txt}</span></button>
-      ${aberto && e.nome === ENV_PREVISTOS ? corpoPrevistos(e, d.hoje) : ''}
-      ${aberto && e.nome !== ENV_PREVISTOS ? `<div class="env-corpo">
+      ${aberto && e.nome === ENV_PREVISTOS && PREVISTOS_LIGADO ? corpoPrevistos(e, d.hoje) : ''}
+      ${aberto && (e.nome !== ENV_PREVISTOS || !PREVISTOS_LIGADO) ? `<div class="env-corpo">
         ${e.meta ? `<div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(e.meta)}</b></div>
         <div class="barra"><i style="width:${pct}%;background:${st.cor}"></i></div>
         <div class="par"><span>Falta</span><b>${brl(Math.max(0, e.meta - e.guardado), true)}${e.dataAlvo ? ' até ' + diaMes(e.dataAlvo) : ''}</b></div>` : '<p class="nota">Sem meta ainda. Dá para pôr na planilha, aba Envelopes, coluna meta.</p>'}
