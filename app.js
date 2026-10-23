@@ -73,7 +73,8 @@ async function carregar() {
 // ---------- Ajudantes ----------
 const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // Sempre com centavos: valor arredondado na tela confunde quando se compara com o banco.
-const brl = (n) => 'R$ ' + Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Arredonda antes: sem isso, −0,001 aparecia como "R$ -0,00".
+const brl = (n) => 'R$ ' + ((Math.round(Number(n || 0) * 100) / 100) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const priv = (texto) => (S.ocultar ? 'R$ ••••' : texto);
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const MESES_LONGOS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -199,6 +200,8 @@ function planoTirar(falta) {
   return { plano, naoCobre: resto };
 }
 const ehPrevisto = (c) => c.envelope === ENV_PREVISTOS;
+// Com os previstos desligados, "Próximos dias" só aparece se ainda tiver dinheiro nele.
+const envVisivel = (e) => PREVISTOS_LIGADO || e.nome !== ENV_PREVISTOS || e.guardado >= 0.01;
 const ehGanho = (c) => c.envelope === ENTRADA_PREV;
 function ganhos() {
   if (!PREVISTOS_LIGADO) return [];
@@ -405,7 +408,7 @@ function telaInicio() {
   const dica = dicas[di];
 
   // Envelopes (carrossel)
-  const envs = (d.envelopes || []).map((e) => {
+  const envs = (d.envelopes || []).filter(envVisivel).map((e) => {
     const st = situacaoEnvelope(e, hoje);
     return `<button class="env-mini" data-a="abrirEnv" data-v="${esc(e.nome)}">${anel(e.meta ? e.guardado / e.meta : 0, 48, 5, st.cor)}
       <small>${esc(e.nome)}</small><b>${priv(brl(e.guardado))}</b><em class="${st.cls}" style="background:none;padding:0">${st.txt}</em></button>`;
@@ -536,11 +539,10 @@ function telaEnvelopes() {
   const d = S.dados;
   return `<div><h1 class="titulo">Envelopes</h1><p class="sub">Toque em um para ver o sugerido e o real.</p></div>
   <section style="display:flex;flex-direction:column;gap:10px">
-  ${(d.envelopes || []).filter((e) => PREVISTOS_LIGADO || e.nome !== ENV_PREVISTOS || e.guardado > 0).map((e) => {
+  ${(d.envelopes || []).filter(envVisivel).map((e) => {
     const st = situacaoEnvelope(e, d.hoje);
     const aberto = S.envAberto === e.nome;
     const pct = e.meta ? Math.min(100, e.guardado / e.meta * 100) : 0;
-    const dif = e.realTotal - e.sugeridoTotal;
     return `<div class="env">
       <button class="env-topo" data-a="env" data-v="${esc(e.nome)}" aria-expanded="${aberto}">${anel(e.meta ? e.guardado / e.meta : 0, 52, 6, st.cor)}
         <span class="cresce"><b style="font-size:15px;font-weight:700">${esc(e.nome)}</b><small style="font-size:13px">${priv(brl(e.guardado))}${e.meta ? ' de ' + brl(e.meta) : ''}</small></span>
@@ -550,7 +552,6 @@ function telaEnvelopes() {
         ${e.meta ? `<div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(e.meta)}</b></div>
         <div class="barra"><i style="width:${pct}%;background:${st.cor}"></i></div>
         <div class="par"><span>Falta</span><b>${brl(Math.max(0, e.meta - e.guardado), true)}${e.dataAlvo ? ' até ' + diaMes(e.dataAlvo) : ''}</b></div>` : '<p class="nota">Sem meta ainda. Dá para pôr na planilha, aba Envelopes, coluna meta.</p>'}
-        ${e.sugeridoTotal || e.realTotal ? `<div class="par"><span>Já dividido: sugerido × real</span><b>${brl(e.sugeridoTotal)} × ${brl(e.realTotal)} ${dif ? `<span class="etiqueta ${dif < 0 ? 'atencao' : 'info'}">${dif < 0 ? '−' : '+'}${brl(Math.abs(dif))}</span>` : ''}</b></div>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
         <div style="display:flex;justify-content:center;gap:22px">
