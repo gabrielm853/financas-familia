@@ -696,7 +696,7 @@ function folhaHtml() {
   } else if (f.tipo === 'registro') {
     const r = f.reg;
     const linhas = [['Tipo', { entrada: 'Entrada', saida: 'Saída', mover: 'Mover', sem_gasto: 'Dia sem gasto' }[r.tipo]], ['Valor', brl(r.valor, true)], ['Categoria', r.categoria], ['Item', r.item], ['Lugar', r.lugar],
-      ['Conta', r.conta], ['Para', r.contaDestino], ['Envelope', r.envelope], ['Pagamento de', r.compromisso], ['Quem', r.quem], ['De quem', r.deQuem], ['Quando', quando(r.data)]].filter((l) => l[1]);
+      ['Conta', r.conta], ['Para', r.contaDestino], ['Envelope', r.envelope], ['Pagamento de', r.compromisso], ['Quem', r.quem], ['De quem', r.deQuem], ['Quando', quando(r.data)], ['Nota', r.obs]].filter((l) => l[1]);
     corpo = `<div class="lista" style="background:var(--cartao2)">${linhas.map((l) => `<div class="lista-linha"><span style="color:var(--apagado)">${l[0]}</span><b>${esc(l[1])}</b></div>`).join('')}</div>
       ${r.tipo !== 'sem_gasto' && r.categoria !== 'Ajuste' ? `<button class="principal" style="background:var(--cartao2);color:var(--texto)" data-a="editarReg">Editar</button>` : ''}
       <p class="sub" style="font-size:13px;line-height:1.5">Editar ou cancelar não apaga nada: o registro antigo fica marcado na planilha, para dar para ver o que aconteceu.</p>
