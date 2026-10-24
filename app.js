@@ -595,6 +595,22 @@ function telaEnvelopes() {
   </section>`;
 }
 
+// Gasto pessoal de cada um (o que é "Os dois" não entra). Toque no nome: em quê.
+function cartaoPessoas(fonte) {
+  fonte = fonte || {};
+  const pessoas = ['Gabriel', 'Débora'].map((n) => ({ nome: n, total: (fonte[n] || {}).total || 0, cats: (fonte[n] || {}).cats || {} }));
+  const maior = Math.max(...pessoas.map((p) => p.total), 0);
+  if (!maior) return '';
+  return `<div class="cartao" style="display:flex;flex-direction:column;gap:12px">
+    <span class="rotulo">Gasto pessoal de cada um</span>
+    ${pessoas.map((p) => `<button style="background:none;border:0;color:inherit;font:inherit;padding:0;text-align:left;display:flex;flex-direction:column;gap:6px;cursor:pointer" data-a="pessoaSel" data-v="${p.nome}">
+      <div class="par"><b style="color:var(--texto)">${p.nome}</b><b>${priv(brl(p.total, true))}</b></div>
+      <div class="barra"><i style="width:${p.total / maior * 100}%;background:${p.nome === 'Gabriel' ? 'var(--azul)' : 'var(--laranja)'}"></i></div>
+      ${S.pessoaSel === p.nome ? Object.keys(p.cats).sort((a, b) => p.cats[b] - p.cats[a]).map((c) => `<div class="par" style="padding-left:10px"><span>${esc(c)}</span><span>${priv(brl(p.cats[c], true))}</span></div>`).join('') : ''}
+    </button>`).join('')}
+    <p class="nota" style="margin:0">O que é da casa ("Os dois") não entra aqui. Toque num nome para ver em quê.</p></div>`;
+}
+
 function telaMes() {
   const d = S.dados;
   const nomeMes = MESES_LONGOS[Number(d.hoje.slice(5, 7)) - 1];
@@ -629,6 +645,7 @@ function telaMes() {
       }).join('')}</div>
       ${sel && S.periodo === 'mes' ? `<div class="cartao" style="animation:aparecer .25s ease-out"><b>${esc(sel.nome)}</b><p class="nota" style="margin-top:6px">${sel.teto ? (sel.valor > sel.teto ? `Teto de ${brl(sel.teto)}. Passou ${brl(sel.valor - sel.teto)}.` : `Teto de ${brl(sel.teto)}. Ainda cabem ${brl(sel.teto - sel.valor)}.`) : 'Primeiro mês: só medindo. O teto entra depois, combinado a partir do número real.'}</p></div>` : ''}`;
     }
+    corpo += cartaoPessoas(S.periodo === 'mes' ? d.pessoaMes : d.pessoaSemana);
     corpo = `<div class="pilulas"><button class="${S.periodo === 'semana' ? 'on' : ''}" data-a="periodo" data-v="semana">7 dias</button><button class="${S.periodo === 'mes' ? 'on' : ''}" data-a="periodo" data-v="mes">Mês</button></div>${corpo}
       <p class="sub" style="text-align:center;font-size:13px;line-height:1.5">Hoje, cada real conta. É olhando o preço agora que um dia vocês vão poder nem olhar.</p>`;
   } else {
@@ -1106,6 +1123,7 @@ const acoes = {
       S.folha = null; avisar('Anotado. Dinheiro dos envelopes no ' + CONTA_ENVELOPES); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
   },
+  pessoaSel: (v) => { S.pessoaSel = S.pessoaSel === v ? null : v; render(); },
   todos: () => { S.folha = { tipo: 'todos' }; render(); },
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
   fechar: () => { S.folha = null; render(); },
