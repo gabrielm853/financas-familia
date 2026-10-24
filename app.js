@@ -583,6 +583,8 @@ function telaEnvelopes() {
         ${(() => { const cs = (d.compromissos || []).filter((c) => c.envelope === e.nome);
           return cs.length ? `<p class="nota" style="margin:4px 0 0">O que forma a meta:</p>${cs.map((c) => `<button class="par" style="background:none;border:0;color:inherit;font:inherit;padding:0 0 0 10px;text-align:left;cursor:pointer" data-a="editarFixa" data-v="${esc(c.nome)}">
             <span>${esc(c.nome)} <small style="color:${c.situacao === 'atrasado' ? 'var(--vermelho-txt)' : 'var(--apagado)'}">· ${c.situacao === 'atrasado' ? 'atrasada' : c.proximaData ? diaMes(c.proximaData) : 'sem data'}</small></span><span>${c.valor ? priv(brl(c.valor, true)) : 'sem valor'}</span></button>`).join('')}` : ''; })()}
+        ${(e.mov || []).length ? `<button class="link" style="align-self:flex-start" data-a="extratoEnv" data-v="${esc(e.nome)}">${S.extratoEnv === e.nome ? 'Esconder' : 'Ver'} o que entrou e saiu</button>
+          ${S.extratoEnv === e.nome ? `<div style="display:flex;flex-direction:column;gap:4px">${e.mov.map((m) => `<div class="par" style="padding-left:10px"><span>${esc(m.txt)} <small style="color:var(--apagado)">· ${m.data ? quando(m.data) : ''}</small></span><b style="color:${m.valor < 0 ? 'var(--vermelho-txt)' : 'var(--verde)'}">${m.valor < 0 ? '−' : '+'}${priv(brl(Math.abs(m.valor), true))}</b></div>`).join('')}</div>` : ''}` : ''}
         ${e.nome === COFRE_PARA && saldoCofre() ? `<p class="nota" style="color:var(--verde)">+ ${priv(brl(saldoCofre(), true))} no ${COFRE}: pode ser gasto no ${COFRE_PARA}.</p>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
@@ -1123,6 +1125,7 @@ const acoes = {
       S.folha = null; avisar('Anotado. Dinheiro dos envelopes no ' + CONTA_ENVELOPES); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
   },
+  extratoEnv: (v) => { S.extratoEnv = S.extratoEnv === v ? null : v; render(); },
   pessoaSel: (v) => { S.pessoaSel = S.pessoaSel === v ? null : v; render(); },
   todos: () => { S.folha = { tipo: 'todos' }; render(); },
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
