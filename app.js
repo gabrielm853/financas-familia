@@ -576,6 +576,9 @@ function telaEnvelopes() {
         ${e.meta ? `<div class="par"><span>Guardado</span><b>${priv(brl(e.guardado, true))} de ${brl(e.meta)}</b></div>
         <div class="barra"><i style="width:${pct}%;background:${st.cor}"></i></div>
         <div class="par"><span>Falta</span><b>${brl(Math.max(0, e.meta - e.guardado), true)}${e.dataAlvo ? ' até ' + diaMes(e.dataAlvo) : ''}</b></div>` : '<p class="nota">Sem meta ainda. Dá para pôr na planilha, aba Envelopes, coluna meta.</p>'}
+        ${(() => { const cs = (d.compromissos || []).filter((c) => c.envelope === e.nome);
+          return cs.length ? `<p class="nota" style="margin:4px 0 0">O que forma a meta:</p>${cs.map((c) => `<button class="par" style="background:none;border:0;color:inherit;font:inherit;padding:0 0 0 10px;text-align:left;cursor:pointer" data-a="editarFixa" data-v="${esc(c.nome)}">
+            <span>${esc(c.nome)} <small style="color:${c.situacao === 'atrasado' ? 'var(--vermelho-txt)' : 'var(--apagado)'}">· ${c.situacao === 'atrasado' ? 'atrasada' : c.proximaData ? diaMes(c.proximaData) : 'sem data'}</small></span><span>${c.valor ? priv(brl(c.valor, true)) : 'sem valor'}</span></button>`).join('')}` : ''; })()}
         ${e.nome === COFRE_PARA && saldoCofre() ? `<p class="nota" style="color:var(--verde)">+ ${priv(brl(saldoCofre(), true))} no ${COFRE}: pode ser gasto no ${COFRE_PARA}.</p>` : ''}
         ${e.obs ? `<p class="nota">${esc(e.obs)}</p>` : ''}
         <button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:48px" data-a="guardar" data-v="${esc(e.nome)}">Guardar dinheiro aqui</button>
