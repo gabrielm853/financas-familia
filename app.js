@@ -19,6 +19,9 @@ const ENTRADA_PREV = 'Vai entrar';        // marca das entradas previstas (não 
 // Tirar dinheiro de envelope para estas é aceitável; para o resto, o app pergunta duas vezes.
 const FIADO = 'Fiado na caderneta'; // "conta" de mentira: a compra soma na caderneta, não sai do banco
 const ESSENCIAIS = ['Mercado/caderneta', 'Alimentação', 'Luisa Amélia', 'Contas da casa', 'Dívidas'];
+// 24/10: conta da casa não é gasto de um nem de outro: é dos dois.
+const DOS_DOIS = 'Os dois';
+const CATS_DOS_DOIS = ['Contas da casa', 'Dívidas'];
 
 // ---------- Memória do celular (só a chave e preferências) ----------
 // Pode falhar (aba anônima, iPhone que limpou dados): por isso o try/catch.
@@ -778,7 +781,7 @@ function folhaHtml() {
         + '<button class="chip on" data-a="modoTirar">Pronto</button>'
       : chips(lista, 'cat', f.cat) + novaCat + '<button class="chip novo" data-a="modoTirar">Tirar</button>';
     const quemDeQuem = `<div style="display:flex;flex-wrap:wrap;gap:16px">
-        <div class="grupo"><span>Quem</span><div class="chips">${chips(['Gabriel', 'Débora'], 'quem', f.quem)}</div></div>
+        <div class="grupo"><span>Quem</span><div class="chips">${chips(f.tipo === 'saida' ? ['Gabriel', 'Débora', DOS_DOIS] : ['Gabriel', 'Débora'], 'quem', f.quem)}</div></div>
         ${f.tipo === 'mover' || f.tipo === 'guardar' ? '' : `<div class="grupo"><span>De quem é</span><div class="chips">${chips(['Pessoal', 'Automy'], 'deQuem', f.deQuem)}</div></div>`}</div>`;
     if (f.tipo === 'previsto' || f.tipo === 'ganho') {
       const ganho = f.tipo === 'ganho';
@@ -1026,7 +1029,7 @@ const acoes = {
   prevGastar: () => {
     const c = (S.dados.compromissos || []).find((x) => x.nome === S.folha.nome) || {};
     const pessoa = c.quem || eu;
-    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null, quem: pessoa, conta: contaDe(pessoa) });
+    abrirFolha('saida', { compromisso: c.nome, valor: String(c.valor || '').replace('.', ','), item: c.nome, cat: c.categoria || null, quem: ehPrevisto(c) ? pessoa : DOS_DOIS, conta: contaDe(pessoa) });
     render();
   },
   passarParaHoje: async () => {
@@ -1107,7 +1110,9 @@ const acoes = {
     if (!(parseFloat((f.valor || '0').replace(',', '.')) > 0)) { f.erro = 'Digite um valor maior que zero.'; render(); return; }
     f.passo = 2; render();
   },
-  campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; if (campo === 'quando') f.dataExata = ''; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false; render(); },
+  campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; if (campo === 'quando') f.dataExata = ''; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false;
+    if (f.tipo === 'saida' && ((campo === 'cat' && CATS_DOS_DOIS.includes(valor)) || (campo === 'compromisso' && f.compromisso))) f.quem = DOS_DOIS;
+    render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
   copiarPix: async () => {
     const pix = S.dados.pixMP;

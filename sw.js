@@ -1,7 +1,7 @@
 // Service worker: guarda as telas no celular para o app abrir na hora.
 // Os NÚMEROS nunca passam por aqui (a API é outro endereço e não é guardada).
 // Mudou algum arquivo do app? Aumente a VERSAO, senão o celular segue com o antigo.
-const VERSAO = 'financas-v29';
+const VERSAO = 'financas-v30';
 const ARQUIVOS = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
