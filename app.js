@@ -853,10 +853,14 @@ function folhaHtml() {
         <button class="principal" style="background:${cor}" data-a="${f.tipo === 'entrada' ? 'irDividir' : 'salvar'}" ${f.salvando ? 'disabled' : ''}>${f.tipo === 'entrada' ? 'Continuar para dividir' : (f.salvando ? 'Anotando…' : precisaConfirmar ? (f.confirmarTirar ? 'Sim, é importante: tirar' : 'Tirar do envelope') : 'Anotar saída')}</button>`;
     } else if (f.tipo === 'mover') {
       corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
-        <div class="grupo"><span>De onde sai</span><div class="chips">${chips(nomesContas, 'conta', f.conta)}</div></div>
+        <div class="grupo"><span>De onde sai</span><div class="chips">${chips(nomesContas, 'conta', f.deEnv ? null : f.conta)}</div></div>
+        ${(d.envelopes || []).some((e) => e.guardado >= 0.01) ? `<div class="grupo"><span>Ou de um envelope</span><div class="chips">${(d.envelopes || []).filter((e) => e.guardado >= 0.01)
+          .map((e) => `<button class="chip ${f.deEnv === e.nome ? 'on' : ''}" data-a="campo" data-v="deEnv|${esc(e.nome)}">${esc(e.nome)} <small style="opacity:.7">${priv(brl(e.guardado, true))}</small></button>`).join('')}</div></div>` : ''}
         <div class="grupo"><span>Para onde vai</span><div class="chips">${chips(nomesContas, 'para', f.para)}</div></div>
         ${quemDeQuem}
-        <p class="sub" style="font-size:13px;color:var(--azul-txt);line-height:1.5">Mover não é gasto: o dinheiro só troca de lugar.</p>
+        <p class="sub" style="font-size:13px;color:var(--azul-txt);line-height:1.5">${f.deEnv
+          ? `Sai do envelope <b style="color:var(--texto)">${esc(f.deEnv)}</b> (o dinheiro está no ${CONTA_ENVELOPES}) e vira livre${f.para && f.para !== CONTA_ENVELOPES ? ' no ' + esc(f.para) : ''}. Não é gasto.`
+          : 'Mover não é gasto: o dinheiro só troca de lugar.'}</p>
         <button class="principal" style="background:${cor}" data-a="salvar" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Movendo…' : 'Mover'}</button>`;
     } else if (f.tipo === 'guardar') {
       corpo = `<button class="valor-toque" data-a="mudarValor" aria-label="Mudar o valor"><b style="color:${cor}">R$ ${esc(f.valor)}</b><span>✎ mudar</span></button>
@@ -933,9 +937,19 @@ async function salvarFolha() {
     const marco = f.div.find((l) => l.real < l.sugerido);
     msg = marco ? `Dividido. ${marco.envelope} ficou ${brl(marco.sugerido - marco.real)} abaixo do sugerido` : 'Dividido como o sugerido';
   } else if (f.tipo === 'mover') {
+    const env = f.deEnv && (S.dados.envelopes || []).find((e) => e.nome === f.deEnv);
+    if (env && valor > env.guardado + 0.009) { avisar(`${env.nome} só tem ${brl(env.guardado, true)}.`, true); return; }
+    if (env && f.para === CONTA_ENVELOPES) {
+      // Fica no Mercado Pago: o dinheiro não anda, só deixa de ser do envelope.
+      f.salvando = true; render();
+      try { await api('tirarEnvelopes', { itens: [{ envelope: env.nome, valor }] }); S.folha = null; avisar(`Saiu de ${env.nome}. Agora é livre`); await carregar(); }
+      catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
+      return;
+    }
     if (f.conta === f.para) { avisar('Escolha contas diferentes.', true); return; }
-    pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.para, deQuem: 'Pessoal' });
-    msg = 'Movido. Não conta como gasto';
+    pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.para, deQuem: 'Pessoal' },
+      env ? { conta: CONTA_ENVELOPES, tirarDe: [{ envelope: env.nome, valor }], obs: 'tirado do envelope ' + env.nome } : {});
+    msg = env ? `Saiu de ${env.nome} e foi para o ${f.para}` : 'Movido. Não conta como gasto';
   } else if (f.tipo === 'guardar') {
     pedido = Object.assign(base, { tipo: 'mover', contaDestino: f.envelope === ENV_PREVISTOS ? f.conta : CONTA_ENVELOPES, envelope: f.envelope, deQuem: 'Pessoal',
       divisao: [{ envelope: f.envelope, sugerido: valor, real: valor }], obs: 'guardar no envelope' });
@@ -1111,6 +1125,8 @@ const acoes = {
     f.passo = 2; render();
   },
   campo: (v) => { const [campo, valor] = v.split('|'); const f = S.folha; if (campo === 'quando') f.dataExata = ''; f[campo] = (campo === 'compromisso' && f[campo] === valor) ? null : valor; f.confirmarTirar = false;
+    if (campo === 'conta' && f.tipo === 'mover') f.deEnv = null;
+    if (campo === 'deEnv') f.conta = CONTA_ENVELOPES;
     if (f.tipo === 'saida' && ((campo === 'cat' && CATS_DOS_DOIS.includes(valor)) || (campo === 'compromisso' && f.compromisso))) f.quem = DOS_DOIS;
     render(); },
   criarCat: () => { S.folha.criandoCat = true; render(); const el = document.getElementById('campo-novacat'); if (el) el.focus(); },
