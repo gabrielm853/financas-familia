@@ -516,7 +516,8 @@ function telaInicio() {
   <section style="display:flex;flex-direction:column;gap:10px">
     <div class="secao"><h2>Últimos registros</h2>
       ${d.anotouHoje ? '' : '<button class="link cinza" data-a="semGasto">Hoje não gastei</button>'}</div>
-    ${(d.recentes || []).length ? `<div class="registros">${d.recentes.slice(0, 6).map(linhaRegistro).join('')}</div>` : '<p class="vazio">Nada anotado ainda. Toque em <b>Entrou</b> ou <b>Saiu</b> para começar.</p>'}
+    ${(d.recentes || []).length ? `<div class="registros">${d.recentes.slice(0, 6).map(linhaRegistro).join('')}</div>
+      ${d.recentes.length > 6 ? `<button class="principal" style="background:var(--cartao2);color:var(--texto);font-size:14px;min-height:46px" data-a="todos">Ver todos os registros (${d.recentes.length})</button>` : ''}` : '<p class="vazio">Nada anotado ainda. Toque em <b>Entrou</b> ou <b>Saiu</b> para começar.</p>'}
   </section>`;
 }
 
@@ -659,7 +660,7 @@ function folhaHtml() {
   const cor = { entrada: 'var(--verde)', saida: 'var(--laranja)', mover: 'var(--azul)', guardar: 'var(--azul)', previsto: 'var(--laranja)', ganho: 'var(--verde)', mandarMP: 'var(--azul)', ajuste: 'var(--azul)' }[f.tipo] || 'var(--verde)';
   const titulos = { entrada: 'Entrou dinheiro', saida: 'Saiu dinheiro', mover: 'Mover entre contas', guardar: 'Guardar em ' + (f.envelope || ''), registro: 'Registro', saldo: 'Ponto de partida',
     previsto: f.editandoPrev ? 'Editar previsto' : 'Vai ter gasto', ganho: f.editandoPrev ? 'Editar entrada prevista' : 'Vai entrar', prevVer: f.nome || '',
-    proxCaderneta: 'Caderneta do próximo mês', ajuste: 'Corrigir saldo', acertar: f.remontar ? 'Remontar a divisão' : 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
+    proxCaderneta: 'Caderneta do próximo mês', ajuste: 'Corrigir saldo', todos: 'Todos os registros', acertar: f.remontar ? 'Remontar a divisão' : 'Acertar com o banco', envEditar: 'Envelope ' + (f.nome || ''), fixa: f.nomeAntigo ? 'Editar conta fixa' : 'Nova conta fixa', mandarMP: 'Mandar para o ' + CONTA_ENVELOPES };
   const valorNum = parseFloat((f.valor || '0').replace(',', '.')) || 0;
   const chips = (lista, campo, atual) => lista.map((n) => `<button class="chip ${atual === n ? 'on' : ''}" data-a="campo" data-v="${esc(campo)}|${esc(n)}">${esc(n)}</button>`).join('');
   const nomesContas = contasAtivas().map((c) => c.nome);
@@ -698,6 +699,12 @@ function folhaHtml() {
       <div class="teclado">${['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((k) => `<button data-a="tecla" data-v="${k}" aria-label="${k === 'del' ? 'Apagar' : k}">${k === 'del' ? '⌫' : k}</button>`).join('')}</div>
       <p class="sub" style="font-size:12px;line-height:1.5;margin:0">Se ainda não compraram nada, deixe 0. Daqui para a frente, cada compra fiado soma aqui.</p>
       <button class="principal" style="background:var(--azul)" data-a="salvarProxCad" ${f.salvando ? 'disabled' : ''}>${f.salvando ? 'Salvando…' : 'Salvar'}</button>`;
+  } else if (f.tipo === 'todos') {
+    // Agrupado por dia, do mais novo para o mais velho.
+    const porDia = {};
+    (d.recentes || []).forEach((r) => { const x = r.data ? new Date(r.data) : null; const k = x ? x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') : ''; (porDia[k] = porDia[k] || []).push(r); });
+    corpo = Object.keys(porDia).map((k) => `<span class="rotulo">${k ? diaMes(k) : 'Sem data'}</span>
+      <div class="registros">${porDia[k].map(linhaRegistro).join('')}</div>`).join('') || '<p class="vazio">Nada anotado ainda.</p>';
   } else if (f.tipo === 'acertar') {
     const campo = (tipo, nome, valor) => `<div class="lista-linha"><span style="color:var(--texto2)">${esc(nome)}</span>
       <input class="campo" style="width:120px;text-align:right;padding:8px 10px;min-height:0" inputmode="decimal" value="${esc(valor)}" data-acerto="${tipo}|${esc(nome)}"></div>`;
@@ -1082,6 +1089,7 @@ const acoes = {
       S.folha = null; avisar('Anotado. Dinheiro dos envelopes no ' + CONTA_ENVELOPES); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
   },
+  todos: () => { S.folha = { tipo: 'todos' }; render(); },
   verRegistro: (v) => { const r = (S.dados.recentes || []).find((x) => x.id === v); if (r) { S.folha = { tipo: 'registro', reg: r }; render(); } },
   fechar: () => { S.folha = null; render(); },
   voltar: () => { S.folha.passo--; render(); },
@@ -1245,7 +1253,7 @@ const acoes = {
     if (ehPrevisto(c)) { S.folha = { tipo: 'prevVer', nome: v }; render(); return; }
     S.folha = { tipo: 'fixa', nomeAntigo: c.nome, nome: c.nome, valorTxt: c.valor ? String(c.valor).replace('.', ',') : '',
       dia: c.diaDoMes ? String(c.diaDoMes) : '', repete: c.repete || 'mensal', parcelas: c.parcelasRestantes === '' || c.parcelasRestantes == null ? '' : String(c.parcelasRestantes),
-      envelope: c.envelope || '' };
+      envelope: c.envelopeBase || c.envelope || '' };  // o da planilha, não o "Atrasadas" de agora
     render();
   },
   salvarFixa: async () => {
