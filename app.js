@@ -40,10 +40,19 @@ const S = {
 };
 
 // ---------- Conversa com a API ----------
+let pedidoPendente = null;  // { corpo, id } da última gravação que ainda não deu certo
 async function api(acao, dados = {}) {
   // "text/plain" de propósito: evita a pergunta prévia do navegador (CORS),
   // que o Apps Script não sabe responder.
   // Cada falha ganha um nome diferente, para a tela dizer o que foi de fato.
+  // 28/10: gravação leva um pedidoId. Se "Não salvou" e tocam de novo com o mesmo
+  // conteúdo, vai o MESMO id, e a API não grava duas vezes (pode ter gravado e só
+  // a resposta se perdido na rede).
+  if (acao !== 'estado') {
+    const corpo = acao + JSON.stringify(dados);
+    if (!pedidoPendente || pedidoPendente.corpo !== corpo) pedidoPendente = { corpo, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) };
+    dados = Object.assign({ pedidoId: pedidoPendente.id }, dados);
+  }
   let r, j;
   try {
     r = await fetch(API, {
@@ -56,6 +65,7 @@ async function api(acao, dados = {}) {
   if (j.erro === 'interno') throw new Error('interno: ' + (j.detalhe || ''));
   if (j.erro === 'chave') { chave = ''; guardar('fin_chave', ''); S.erroEntrar = 'Chave não confere.'; render(); throw new Error('chave'); }
   if (j.erro) throw new Error(j.erro);
+  if (acao !== 'estado') pedidoPendente = null;
   return j;
 }
 
@@ -975,6 +985,19 @@ async function salvarFolha() {
     msg = 'Guardado em ' + f.envelope;
   }
   if (f.substitui) { pedido.substitui = f.substitui; msg = 'Corrigido'; }
+  // 28/10: conta nunca fica negativa (a API também confere). Numa correção, o
+  // registro antigo sai da conta antes de comparar.
+  if ((pedido.tipo === 'saida' || pedido.tipo === 'mover') && pedido.conta && !pedido.fiado) {
+    const c = contasAtivas().find((x) => x.nome === pedido.conta);
+    let tem = c ? c.saldo : 0;
+    const ant = f.substitui && (S.dados.recentes || []).find((r) => r.id === f.substitui);
+    if (ant && ant.conta === pedido.conta) tem += ant.tipo === 'entrada' ? -ant.valor : ant.valor;
+    if (ant && ant.tipo === 'mover' && ant.contaDestino === pedido.conta) tem -= ant.valor;
+    if (valor > tem + 0.009) {
+      avisar(`${pedido.conta} só tem ${brl(Math.max(0, tem), true)} no app. Se no banco tem mais, faltou anotar uma entrada: corrija o saldo da conta primeiro.`, true);
+      return;
+    }
+  }
   f.salvando = true; render();
   try {
     await api('registrar', pedido);
@@ -993,7 +1016,8 @@ async function salvarFolha() {
     await carregar();
   } catch (e) {
     f.salvando = false;
-    if (e.message !== 'chave') avisar('Não salvou (sem internet?). Tente de novo.', true);
+    if (e.message === 'sem_saldo') avisar(`${pedido.conta} não tem esse dinheiro na planilha (alguém anotou antes de você?). Atualize e confira o saldo.`, true);
+    else if (e.message !== 'chave') avisar('Não salvou (sem internet?). Tente de novo.', true);
     render();
   }
 }
@@ -1114,11 +1138,19 @@ const acoes = {
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar(e.message === 'ja_existe' ? 'Já existe um com esse nome.' : 'Não salvou. Tente de novo.', true); render(); }
   },
   mandarMP: (v) => {
+    // 28/10: abria sempre no Inter de quem toca. O dinheiro estava Em espécie, o
+    // Gabriel tocou "Já mandei" e o app tirou do Inter. Agora já vem marcada a conta
+    // que tem esse dinheiro (a de maior saldo, preferindo a de quem toca no empate).
+    const valor = Number(v) || 0;
     const minha = eu === 'Débora' ? 'Inter Débora' : 'Inter Gabriel';
-    S.folha = { tipo: 'mandarMP', valorNum: Number(v) || 0, conta: minha, quem: eu }; render();
+    const cabe = contasAtivas().filter((c) => c.disponivel && c.nome !== CONTA_ENVELOPES && c.saldo >= valor - 0.009)
+      .sort((a, b) => b.saldo - a.saldo || (b.nome === minha) - (a.nome === minha));
+    S.folha = { tipo: 'mandarMP', valorNum: valor, conta: cabe.length ? cabe[0].nome : minha, quem: eu }; render();
   },
   jaMandei: async () => {
     const f = S.folha;
+    const c = contasAtivas().find((x) => x.nome === f.conta);
+    if (!c || f.valorNum > c.saldo + 0.009) { avisar(`${f.conta} só tem ${brl(Math.max(0, c ? c.saldo : 0), true)} no app. Confira de qual conta o dinheiro saiu.`, true); return; }
     f.salvando = true; render();
     try {
       await api('registrar', { tipo: 'mover', valor: f.valorNum, conta: f.conta, contaDestino: CONTA_ENVELOPES, quem: f.quem || eu, deQuem: 'Pessoal', obs: 'dinheiro dos envelopes' });
@@ -1260,8 +1292,8 @@ const acoes = {
     if (!dif) { S.folha = null; avisar('Já estava certo'); render(); return; }
     f.salvando = true; render();
     try {
-      await api('registrar', { tipo: dif > 0 ? 'entrada' : 'saida', valor: Math.abs(dif), categoria: 'Ajuste', conta: f.conta, quem: eu,
-        obs: 'ajuste: app dizia ' + f.saldoApp.toFixed(2) + ', banco dizia ' + real.toFixed(2) });
+      // A API calcula a diferença com o saldo da planilha agora (alguém pode ter anotado nesse meio tempo).
+      await api('acertarTudo', { contas: [{ conta: f.conta, saldoApp: f.saldoApp, real }], envelopes: [], quem: eu });
       S.folha = null; avisar('Saldo corrigido'); await carregar();
     } catch (e) { f.salvando = false; if (e.message !== 'chave') avisar('Não salvou. Tente de novo.', true); render(); }
   },
